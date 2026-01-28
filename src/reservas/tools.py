@@ -10,13 +10,13 @@ from typing import Any, Dict
 from langchain.tools import tool, ToolRuntime
 
 try:
-    from .validator import ScheduleValidator
+    from .schedule_validator import ScheduleValidator
     from .booking import confirm_booking
     from .logger import get_logger
     from .metrics import track_tool_execution
     from .validation import validate_booking_data
 except ImportError:
-    from validator import ScheduleValidator
+    from schedule_validator import ScheduleValidator
     from booking import confirm_booking
     from logger import get_logger
     from metrics import track_tool_execution
@@ -119,7 +119,7 @@ async def create_booking(
     
     Examples:
         >>> await create_booking("Corte", "2026-01-27", "02:00 PM", "Juan Pérez", "987654321")
-        "✅ Reserva confirmada exitosamente. Código: RES-12345"
+        "Reserva confirmada exitosamente. Código: RES-12345"
     """
     logger.info(f"[TOOL] create_booking - {service} | {date} {time} | {customer_name}")
     
@@ -145,7 +145,7 @@ async def create_booking(
             
             if not is_valid:
                 logger.warning(f"[TOOL] create_booking - Datos inválidos: {error}")
-                return f"❌ Datos inválidos: {error}\n\nPor favor verifica la información."
+                return f"Datos inválidos: {error}\n\nPor favor verifica la información."
             
             # 2. VALIDAR horario con ScheduleValidator
             logger.debug("[TOOL] create_booking - Validando horario")
@@ -164,7 +164,7 @@ async def create_booking(
             if not validation["valid"]:
                 # Horario no válido, retornar error
                 logger.warning(f"[TOOL] create_booking - Horario no válido: {validation['error']}")
-                return f"❌ {validation['error']}\n\nPor favor elige otra fecha u hora."
+                return f"{validation['error']}\n\nPor favor elige otra fecha u hora."
             
             # 3. CONFIRMAR booking en endpoint real
             logger.debug("[TOOL] create_booking - Confirmando en API")
@@ -183,10 +183,10 @@ async def create_booking(
             
             if booking_result["success"]:
                 # Reserva exitosa con código real
-                logger.info(f"[TOOL] create_booking - ✅ Éxito - Código: {booking_result['codigo']}")
-                return f"""✅ Reserva confirmada exitosamente
+                logger.info(f"[TOOL] create_booking - Éxito - Código: {booking_result['codigo']}")
+                return f"""Reserva confirmada exitosamente
 
-📋 **Detalles:**
+**Detalles:**
 • Servicio: {service}
 • Fecha: {date}
 • Hora: {time}
@@ -196,12 +196,12 @@ async def create_booking(
 Guarda este código para futuras consultas. ¡Te esperamos! 🎉"""
             else:
                 # Error al confirmar en el endpoint
-                logger.warning(f"[TOOL] create_booking - ❌ Fallo: {booking_result['error']}")
-                return f"❌ No se pudo confirmar la reserva: {booking_result['error']}\n\nPor favor intenta nuevamente."
+                logger.warning(f"[TOOL] create_booking - Fallo: {booking_result['error']}")
+                return f"No se pudo confirmar la reserva: {booking_result['error']}\n\nPor favor intenta nuevamente."
     
     except Exception as e:
         logger.error(f"[TOOL] create_booking - Error inesperado: {e}", exc_info=True)
-        return f"❌ Error inesperado al crear la reserva: {str(e)}\n\nPor favor intenta nuevamente."
+        return f"Error inesperado al crear la reserva: {str(e)}\n\nPor favor intenta nuevamente."
 
 
 # Lista de todas las tools disponibles para el agente
@@ -209,6 +209,5 @@ AGENT_TOOLS = [
     check_availability,
     create_booking
 ]
-
 
 __all__ = ["check_availability", "create_booking", "AGENT_TOOLS"]

@@ -16,12 +16,14 @@ try:
     from .tools import AGENT_TOOLS
     from .logger import get_logger
     from .metrics import track_chat_response, track_llm_call, record_chat_error, chat_requests_total
+    from .prompts import build_reserva_system_prompt
 except ImportError:
     import config as app_config
     from models import ReservaConfig
     from tools import AGENT_TOOLS
     from logger import get_logger
     from metrics import track_chat_response, track_llm_call, record_chat_error, chat_requests_total
+    from prompts import build_reserva_system_prompt
 
 logger = get_logger(__name__)
 
@@ -30,7 +32,6 @@ _checkpointer = InMemorySaver()
 
 # Cache del agente
 _agent = None
-
 
 @dataclass
 class AgentContext:
@@ -65,87 +66,20 @@ def _validate_context(context: Dict[str, Any]) -> None:
     logger.debug(f"[AGENT] Context validated: id_empresa={config_data.get('id_empresa')}")
 
 
-def _build_system_prompt(personalidad: str) -> str:
-    """
-    Construye el system prompt para el agente.
-    
-    Args:
-        personalidad: Personalidad del agente
-    
-    Returns:
-        String con el system prompt
-    """
-    return f"""Eres un asistente especializado en **gestión de reservas**.
-
-## Tu Personalidad
-{personalidad}
-
-## Tu Función
-Ayudar al cliente a completar una reserva capturando la información necesaria:
-1. **Servicio/Actividad**: ¿Qué quiere reservar?
-2. **Fecha**: ¿Para qué día?
-3. **Hora**: ¿A qué hora?
-4. **Datos del cliente**: Nombre y contacto (teléfono o email)
-
-## Herramientas Disponibles
-Tienes acceso a estas herramientas para ayudarte:
-
-1. **check_availability(service, date)**: Consulta horarios disponibles
-   - Úsala cuando el cliente pregunte por disponibilidad
-   - Úsala cuando necesites verificar si una fecha está libre
-
-2. **create_booking(service, date, time, customer_name, customer_contact, session_id)**: Crea una reserva
-   - Úsala SOLO cuando tengas TODOS los datos necesarios
-   - La herramienta validará el horario y creará la reserva real
-   - Retorna un código de confirmación
-
-## Flujo de Trabajo
-1. **Saluda** de forma {personalidad}
-2. **Pregunta** por los datos que faltan (uno a la vez)
-3. **Usa check_availability** si el cliente pregunta o necesites verificar
-4. **Confirma** los datos con el cliente antes de crear la reserva
-5. **Usa create_booking** cuando tengas todo confirmado
-6. **Proporciona** el código de reserva al cliente
-
-## Reglas Importantes
-- Sé **conversacional** y natural
-- **Una pregunta a la vez** para no abrumar
-- **Brevedad**: Máximo 3-4 oraciones por respuesta
-- **Confirma** todos los datos antes de llamar a create_booking
-- Si el cliente da múltiples datos juntos, úsalos todos
-- **NO inventes** códigos de reserva, solo usa el que retorna create_booking
-
-## Ejemplos
-
-**Usuario:** "Quiero reservar"
-**Tú:** "¡Perfecto! ¿Qué servicio deseas reservar?"
-
-**Usuario:** "Corte de cabello para mañana"
-**Tú:** Llamas check_availability("corte", "2026-01-28")
-Luego: "Tenemos disponibilidad mañana. ¿A qué hora te gustaría?"
-
-**Usuario:** "A las 3pm, soy Juan 987654321"
-**Tú:** "Perfecto Juan. Confirmo tu reserva de corte para mañana a las 3pm?"
-
-**Usuario:** "Sí"
-**Tú:** Llamas create_booking("corte", "2026-01-28", "03:00 PM", "Juan", "987654321", session_id)
-Luego proporcionas el código que retornó la herramienta"""
-
-
-def _get_agent(personalidad: str):
+def _get_agent(config: Dict[str, Any]):
     """
     Obtiene o crea el agente con la API moderna de LangChain 1.2+.
     
     Args:
-        personalidad: Personalidad del agente
+        config: Diccionario con configuración del agente (personalidad, etc.)
     
     Returns:
         Agente configurado con tools y checkpointer
     """
     global _agent
     
-    # Recrear agent cada vez para tener personalidad actualizada
-    # (en producción, podrías cachear por personalidad)
+    # Recrear agent cada vez para tener configuración actualizada
+    # (en producción, podrías cachear por configuración)
     
     logger.info(f"[AGENT] Creando agente con LangChain 1.2+ API")
     
@@ -158,8 +92,11 @@ def _get_agent(personalidad: str):
         timeout=app_config.OPENAI_TIMEOUT,
     )
     
-    # Construir system prompt
-    system_prompt = _build_system_prompt(personalidad)
+    # Construir system prompt usando template Jinja2
+    system_prompt = build_reserva_system_prompt(
+        config=config,
+        history=None  # Por ahora sin historial, se agregará cuando implementemos límite de memoria
+    )
     
     # Crear agente con API moderna
     _agent = create_agent(
@@ -169,14 +106,9 @@ def _get_agent(personalidad: str):
         checkpointer=_checkpointer  # Memoria automática
     )
     
-    logger.info(f"[AGENT] ✅ Agente creado - Tools: {len(AGENT_TOOLS)}, Checkpointer: InMemorySaver")
+    logger.info(f"[AGENT] Agente creado - Tools: {len(AGENT_TOOLS)}, Checkpointer: InMemorySaver")
     
     return _agent
-
-
-# Funciones antiguas removidas - ya no necesarias con LangChain 1.2+
-# La extracción de datos ahora la maneja el LLM con function calling
-# La confirmación se detecta automáticamente en el flujo
 
 
 def _prepare_agent_context(context: Dict[str, Any], session_id: str) -> AgentContext:
@@ -241,36 +173,31 @@ async def process_reserva_message(
         record_chat_error("context_error")
         return f"Error de configuración: {str(e)}"
     
-    # 1. OBTENER CONFIGURACIÓN
     config_data = context.get("config", {})
     reserva_config = ReservaConfig(**config_data)
-    personalidad = reserva_config.personalidad or "amable, profesional y eficiente"
     
-    # 2. CREAR AGENTE con personalidad
+    if "personalidad" not in config_data or not config_data.get("personalidad"):
+        config_data["personalidad"] = reserva_config.personalidad or "amable, profesional y eficiente"
+    
     try:
-        agent = _get_agent(personalidad)
+        agent = _get_agent(config_data)
     except Exception as e:
         logger.error(f"[AGENT] Error creando agent: {e}", exc_info=True)
         record_chat_error("agent_creation_error")
         return "Disculpa, tuve un problema de configuración. ¿Podrías intentar nuevamente?"
     
-    # 3. PREPARAR CONTEXT RUNTIME para tools
     agent_context = _prepare_agent_context(context, session_id)
     
-    # 4. PREPARAR CONFIG para checkpointer (memoria automática)
     config = {
         "configurable": {
-            "thread_id": session_id  # thread_id = session_id para memoria por sesión
+            "thread_id": session_id
         }
     }
-    
-    # 5. EJECUTAR AGENT con API moderna
     try:
         logger.info(f"[AGENT] Invocando agent - Session: {session_id}, Message: {message[:100]}...")
         
         with track_chat_response():
             with track_llm_call():
-                # Nueva API: .invoke() con messages
                 result = agent.invoke(
                     {
                         "messages": [
@@ -278,10 +205,9 @@ async def process_reserva_message(
                         ]
                     },
                     config=config,
-                    context=agent_context  # Runtime context para tools
+                    context=agent_context
                 )
         
-        # Extraer respuesta (última AI message)
         messages = result.get("messages", [])
         if messages:
             last_message = messages[-1]
@@ -289,10 +215,10 @@ async def process_reserva_message(
         else:
             response_text = "Lo siento, no pude procesar tu solicitud."
         
-        logger.info(f"[AGENT] ✅ Respuesta generada: {response_text[:200]}...")
+        logger.info(f"[AGENT] Respuesta generada: {response_text[:200]}...")
     
     except Exception as e:
-        logger.error(f"[AGENT] ❌ Error al ejecutar agent: {e}", exc_info=True)
+        logger.error(f"[AGENT] Error al ejecutar agent: {e}", exc_info=True)
         record_chat_error("agent_execution_error")
         return "Disculpa, tuve un problema al procesar tu mensaje. ¿Podrías intentar nuevamente?"
     

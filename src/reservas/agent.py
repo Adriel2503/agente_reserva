@@ -115,6 +115,9 @@ def _prepare_agent_context(context: Dict[str, Any], session_id: str) -> AgentCon
     """
     Prepara el contexto runtime para inyectar a las tools del agente.
     
+    Usa los valores que vienen del orquestador. Si no vienen, deja que el dataclass
+    use sus defaults.
+    
     Args:
         context: Contexto del orquestador
         session_id: ID de sesión
@@ -124,13 +127,29 @@ def _prepare_agent_context(context: Dict[str, Any], session_id: str) -> AgentCon
     """
     config_data = context.get("config", {})
     
-    return AgentContext(
-        id_empresa=config_data.get("id_empresa", 1),
-        duracion_cita_minutos=config_data.get("duracion_cita_minutos", 60),
-        slots=config_data.get("slots", 60),
-        id_usuario=config_data.get("agendar_usuario", 1),
-        session_id=session_id
-    )
+    # id_empresa ya está validado, usar directamente
+    context_params = {
+        "id_empresa": config_data["id_empresa"],
+        "session_id": session_id
+    }
+    
+    # Solo agregar valores que vienen del orquestador (si existen)
+    if "duracion_cita_minutos" in config_data and config_data["duracion_cita_minutos"] is not None:
+        context_params["duracion_cita_minutos"] = config_data["duracion_cita_minutos"]
+    
+    if "slots" in config_data and config_data["slots"] is not None:
+        context_params["slots"] = config_data["slots"]
+    
+    # agendar_usuario viene como bool del orquestador, convertir a int
+    if "agendar_usuario" in config_data and config_data["agendar_usuario"] is not None:
+        agendar_usuario = config_data["agendar_usuario"]
+        # Convertir bool a int si es necesario
+        if isinstance(agendar_usuario, bool):
+            context_params["id_usuario"] = 1 if agendar_usuario else 0
+        elif isinstance(agendar_usuario, int):
+            context_params["id_usuario"] = agendar_usuario
+    
+    return AgentContext(**context_params)
 
 
 async def process_reserva_message(

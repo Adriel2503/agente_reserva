@@ -36,7 +36,7 @@ initialize_agent_info(model=app_config.OPENAI_MODEL, version="2.0.0")
 # Inicializar servidor MCP
 mcp = FastMCP(
     name="Agente Reservas - MaravIA",
-    instructions="Agente especializado en gestión de reservas, turnos y citas con LangChain 1.2+ Agent"
+    instructions="Agente especializado en gestión de reservas y turnos"
 )
 
 
@@ -47,7 +47,7 @@ async def chat(
     context: Dict[str, Any] | None = None
 ) -> str:
     """
-    Agente especializado en gestión de reservas con LangChain 1.2+ Agent.
+    Agente especializado en gestión de reservas.
     
     Esta es la ÚNICA herramienta que el orquestador debe llamar.
     Internamente, el agente usa tools propias para:

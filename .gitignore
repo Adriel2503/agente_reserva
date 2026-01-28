@@ -35,3 +35,8 @@ logs/
 .pytest_cache/
 .coverage
 htmlcov/
+
+.tmpcache/
+
+# Temporary files
+tmpclaude-*-cwd

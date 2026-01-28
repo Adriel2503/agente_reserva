@@ -86,14 +86,19 @@ async def confirm_booking(
         logger.debug(f"[BOOKING] Respuesta API: {data}")
         
         if data.get("success"):
-            codigo = data.get("codigo_cita", "RES-XXXX")
-            logger.info(f"[BOOKING] Reserva exitosa - Código: {codigo}")
+            codigo = data.get("codigo_cita")
+            if codigo:
+                logger.info(f"[BOOKING] Reserva exitosa - Código: {codigo}")
+                message = f"Reserva confirmada exitosamente. Código: {codigo}"
+            else:
+                logger.warning(f"[BOOKING] Reserva exitosa pero sin código de confirmación")
+                message = "Reserva confirmada exitosamente"
             record_booking_success()
             
             return {
                 "success": True,
                 "codigo": codigo,
-                "message": f"Reserva confirmada exitosamente. Código: {codigo}",
+                "message": message,
                 "error": None
             }
         else:

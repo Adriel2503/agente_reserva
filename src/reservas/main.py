@@ -65,7 +65,7 @@ async def chat(
             - config.id_empresa (int, requerido): ID de la empresa
             - config.duracion_cita_minutos (int, opcional): Duración en minutos (default: 60)
             - config.slots (int, opcional): Slots disponibles (default: 60)
-            - config.agendar_usuario (int, opcional): ID usuario que agenda (default: 1)
+            - config.agendar_usuario (bool o int, opcional): Usuario que agenda. Si es bool, True=1, False=0 (default: 1)
             - config.personalidad (str, opcional): Personalidad del agente
     
     Returns:

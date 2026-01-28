@@ -30,9 +30,6 @@ logger = get_logger(__name__)
 # Checkpointer global para memoria automática
 _checkpointer = InMemorySaver()
 
-# Cache del agente
-_agent = None
-
 @dataclass
 class AgentContext:
     """
@@ -68,7 +65,10 @@ def _validate_context(context: Dict[str, Any]) -> None:
 
 def _get_agent(config: Dict[str, Any]):
     """
-    Obtiene o crea el agente con la API moderna de LangChain 1.2+.
+    Crea el agente con la API moderna de LangChain 1.2+.
+    
+    El agente se recrea en cada llamada para tener la configuración actualizada
+    (personalidad, etc.) del orquestador.
     
     Args:
         config: Diccionario con configuración del agente (personalidad, etc.)
@@ -76,11 +76,6 @@ def _get_agent(config: Dict[str, Any]):
     Returns:
         Agente configurado con tools y checkpointer
     """
-    global _agent
-    
-    # Recrear agent cada vez para tener configuración actualizada
-    # (en producción, podrías cachear por configuración)
-    
     logger.info(f"[AGENT] Creando agente con LangChain 1.2+ API")
     
     # Inicializar modelo
@@ -93,22 +88,23 @@ def _get_agent(config: Dict[str, Any]):
     )
     
     # Construir system prompt usando template Jinja2
+    # TODO: Pasar historial real cuando se implemente límite de memoria (5 turnos)
     system_prompt = build_reserva_system_prompt(
         config=config,
-        history=None  # Por ahora sin historial, se agregará cuando implementemos límite de memoria
+        history=None
     )
     
     # Crear agente con API moderna
-    _agent = create_agent(
+    agent = create_agent(
         model=model,
         tools=AGENT_TOOLS,
         system_prompt=system_prompt,
-        checkpointer=_checkpointer  # Memoria automática
+        checkpointer=_checkpointer
     )
     
     logger.info(f"[AGENT] Agente creado - Tools: {len(AGENT_TOOLS)}, Checkpointer: InMemorySaver")
     
-    return _agent
+    return agent
 
 
 def _prepare_agent_context(context: Dict[str, Any], session_id: str) -> AgentContext:

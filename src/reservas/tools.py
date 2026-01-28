@@ -56,6 +56,7 @@ async def check_availability(
     id_empresa = ctx.id_empresa if ctx else 1
     duracion_cita_minutos = ctx.duracion_cita_minutos if ctx else 60
     slots = ctx.slots if ctx else 60
+    id_usuario = ctx.id_usuario if ctx else 1
     
     try:
         with track_tool_execution("check_availability"):
@@ -65,7 +66,7 @@ async def check_availability(
                 duracion_cita_minutos=duracion_cita_minutos,
                 slots=slots,
                 es_reservacion=True,
-                agendar_usuario=0,
+                agendar_usuario=id_usuario,
                 agendar_sucursal=0
             )
             
@@ -193,7 +194,7 @@ async def create_booking(
 • Nombre: {customer_name}
 • **Código: {booking_result['codigo']}**
 
-Guarda este código para futuras consultas. ¡Te esperamos! 🎉"""
+Guarda este código para futuras consultas. ¡Te esperamos!"""
             else:
                 # Error al confirmar en el endpoint
                 logger.warning(f"[TOOL] create_booking - Fallo: {booking_result['error']}")

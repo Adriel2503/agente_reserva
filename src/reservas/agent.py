@@ -87,7 +87,7 @@ def _get_agent(config: Dict[str, Any]):
     model = init_chat_model(
         f"openai:{app_config.OPENAI_MODEL}",
         api_key=app_config.OPENAI_API_KEY,
-        temperature=0.7,  # Más creativo que el orquestador
+        temperature=0.4,  
         max_tokens=app_config.MAX_TOKENS,
         timeout=app_config.OPENAI_TIMEOUT,
     )

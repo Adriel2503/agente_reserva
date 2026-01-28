@@ -95,18 +95,18 @@ async def chat(
             context=context
         )
         
-        logger.info(f"[MCP] ✅ Respuesta generada - Length: {len(reply)} chars")
+        logger.info(f"[MCP] Respuesta generada - Length: {len(reply)} chars")
         logger.debug(f"[MCP] Reply: {reply[:200]}...")
         return reply
     
     except ValueError as e:
         error_msg = f"Error de configuración: {str(e)}"
-        logger.error(f"[MCP] ❌ {error_msg}")
+        logger.error(f"[MCP] {error_msg}")
         return error_msg
     
     except Exception as e:
         error_msg = f"Error procesando mensaje: {str(e)}"
-        logger.error(f"[MCP] ❌ {error_msg}", exc_info=True)
+        logger.error(f"[MCP] {error_msg}", exc_info=True)
         return error_msg
 
 
@@ -116,21 +116,21 @@ metrics_app = make_asgi_app()
 
 if __name__ == "__main__":
     logger.info("=" * 60)
-    logger.info("🚀 INICIANDO AGENTE RESERVAS - MaravIA")
+    logger.info("INICIANDO AGENTE RESERVAS - MaravIA")
     logger.info("=" * 60)
-    logger.info(f"📍 Host: {app_config.SERVER_HOST}:{app_config.SERVER_PORT}")
-    logger.info(f"🤖 Modelo: {app_config.OPENAI_MODEL}")
-    logger.info(f"⏱️  Timeout LLM: {app_config.OPENAI_TIMEOUT}s")
-    logger.info(f"⏱️  Timeout API: {app_config.API_TIMEOUT}s")
-    logger.info(f"💾 Cache TTL: {app_config.SCHEDULE_CACHE_TTL_MINUTES} min")
-    logger.info(f"📊 Log Level: {app_config.LOG_LEVEL}")
+    logger.info(f"Host: {app_config.SERVER_HOST}:{app_config.SERVER_PORT}")
+    logger.info(f"Modelo: {app_config.OPENAI_MODEL}")
+    logger.info(f"Timeout LLM: {app_config.OPENAI_TIMEOUT}s")
+    logger.info(f"Timeout API: {app_config.API_TIMEOUT}s")
+    logger.info(f"Cache TTL: {app_config.SCHEDULE_CACHE_TTL_MINUTES} min")
+    logger.info(f"Log Level: {app_config.LOG_LEVEL}")
     logger.info("-" * 60)
-    logger.info("🔧 Tool expuesta al orquestador: chat")
-    logger.info("🛠️  Tools internas del agente:")
-    logger.info("   - check_availability (consulta horarios)")
-    logger.info("   - create_booking (crea reservas)")
+    logger.info("Tool expuesta al orquestador: chat")
+    logger.info("Tools internas del agente:")
+    logger.info("- check_availability (consulta horarios)")
+    logger.info("- create_booking (crea reservas)")
     logger.info("-" * 60)
-    logger.info("📈 Métricas disponibles en /metrics (Prometheus)")
+    logger.info("Métricas disponibles en /metrics (Prometheus)")
     logger.info("=" * 60)
     
     # Ejecutar servidor MCP
@@ -141,7 +141,7 @@ if __name__ == "__main__":
             port=app_config.SERVER_PORT
         )
     except KeyboardInterrupt:
-        logger.info("\n👋 Servidor detenido por el usuario")
+        logger.info("\nServidor detenido por el usuario")
     except Exception as e:
-        logger.critical(f"❌ Error crítico en el servidor: {e}", exc_info=True)
+        logger.critical(f"Error crítico en el servidor: {e}", exc_info=True)
         raise

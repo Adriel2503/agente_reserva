@@ -87,7 +87,7 @@ async def confirm_booking(
         
         if data.get("success"):
             codigo = data.get("codigo_cita", "RES-XXXX")
-            logger.info(f"[BOOKING] ✅ Reserva exitosa - Código: {codigo}")
+            logger.info(f"[BOOKING] Reserva exitosa - Código: {codigo}")
             record_booking_success()
             
             return {
@@ -98,7 +98,7 @@ async def confirm_booking(
             }
         else:
             error_msg = data.get("message", "Error desconocido")
-            logger.warning(f"[BOOKING] ❌ Reserva fallida: {error_msg}")
+            logger.warning(f"[BOOKING] Reserva fallida: {error_msg}")
             record_booking_failure("api_error")
             
             return {
@@ -109,7 +109,7 @@ async def confirm_booking(
             }
     
     except httpx.TimeoutException:
-        logger.error("[BOOKING] ❌ Timeout al confirmar reserva")
+        logger.error("[BOOKING] Timeout al confirmar reserva")
         record_booking_failure("timeout")
         return {
             "success": False,
@@ -119,7 +119,7 @@ async def confirm_booking(
         }
     
     except httpx.HTTPStatusError as e:
-        logger.error(f"[BOOKING] ❌ Error HTTP {e.response.status_code}: {e}")
+        logger.error(f"[BOOKING] Error HTTP {e.response.status_code}: {e}")
         record_booking_failure(f"http_{e.response.status_code}")
         return {
             "success": False,
@@ -129,7 +129,7 @@ async def confirm_booking(
         }
     
     except httpx.RequestError as e:
-        logger.error(f"[BOOKING] ❌ Error de conexión: {e}")
+        logger.error(f"[BOOKING] Error de conexión: {e}")
         record_booking_failure("connection_error")
         return {
             "success": False,
@@ -139,7 +139,7 @@ async def confirm_booking(
         }
     
     except Exception as e:
-        logger.error(f"[BOOKING] ❌ Error inesperado: {e}", exc_info=True)
+        logger.error(f"[BOOKING] Error inesperado: {e}", exc_info=True)
         record_booking_failure("unknown_error")
         return {
             "success": False,

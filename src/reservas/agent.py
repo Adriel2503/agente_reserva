@@ -213,7 +213,7 @@ async def process_reserva_message(
         
         with track_chat_response():
             with track_llm_call():
-                result = agent.invoke(
+                result = await agent.ainvoke(
                     {
                         "messages": [
                             {"role": "user", "content": message}

@@ -1,15 +1,20 @@
 """
 Agente especializado en reservas - MaravIA
 
+🚀 Versión 2.0.0 - LangChain 1.2+ API Moderna
+
 Sistema mejorado con:
-- Logging centralizado
-- Performance async (httpx)
-- Cache global con TTL
-- Validación de datos
-- Métricas y observabilidad
+- ✨ LangChain 1.2+ API moderna con create_agent
+- 🧠 Memoria automática con checkpointer
+- 🔧 Runtime context para tools
+- 📊 Logging centralizado
+- ⚡ Performance async (httpx)
+- 💾 Cache global con TTL
+- ✅ Validación de datos con Pydantic
+- 📈 Métricas y observabilidad (Prometheus)
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "MaravIA Team"
 
 # Exportar funciones principales

@@ -90,16 +90,6 @@ llm_call_duration_seconds = Histogram(
 
 # ========== GAUGES (ESTADO ACTUAL) ==========
 
-active_sessions = Gauge(
-    'agent_reservas_active_sessions',
-    'Número de sesiones activas en memoria'
-)
-
-memory_turns_total = Gauge(
-    'agent_reservas_memory_turns_total',
-    'Número total de turnos guardados en memoria'
-)
-
 cache_entries = Gauge(
     'agent_reservas_cache_entries',
     'Número de entradas en cache',
@@ -194,12 +184,6 @@ def record_chat_error(error_type: str):
     chat_errors_total.labels(error_type=error_type).inc()
 
 
-def update_memory_stats(total_sessions: int, total_turns: int):
-    """Actualiza estadísticas de memoria."""
-    active_sessions.set(total_sessions)
-    memory_turns_total.set(total_turns)
-
-
 def update_cache_stats(cache_type: str, count: int):
     """Actualiza estadísticas de cache."""
     cache_entries.labels(cache_type=cache_type).set(count)
@@ -225,7 +209,6 @@ __all__ = [
     'record_booking_success',
     'record_booking_failure',
     'record_chat_error',
-    'update_memory_stats',
     'update_cache_stats',
     'initialize_agent_info',
     # Metrics (para acceso directo si necesario)

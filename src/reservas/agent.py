@@ -1,34 +1,48 @@
 """
-Lógica del agente especializado en reservas usando LangChain Agent con tools.
-Versión mejorada con logging, métricas y configuración centralizada.
+Lógica del agente especializado en reservas usando LangChain 1.2+ API moderna.
+Versión mejorada con logging, métricas, configuración centralizada y memoria automática.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
+from dataclasses import dataclass
 
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_openai import ChatOpenAI
-from langchain.agents import create_openai_functions_agent, AgentExecutor
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+from langgraph.checkpoint.memory import InMemorySaver
 
 try:
     from . import config as app_config
     from .models import ReservaConfig
-    from .memory import add_turn, get_history
     from .tools import AGENT_TOOLS
     from .logger import get_logger
     from .metrics import track_chat_response, track_llm_call, record_chat_error, chat_requests_total
 except ImportError:
     import config as app_config
     from models import ReservaConfig
-    from memory import add_turn, get_history
     from tools import AGENT_TOOLS
     from logger import get_logger
     from metrics import track_chat_response, track_llm_call, record_chat_error, chat_requests_total
 
 logger = get_logger(__name__)
 
-_llm: Optional[ChatOpenAI] = None
-_agent_executor: Optional[AgentExecutor] = None
+# Checkpointer global para memoria automática
+_checkpointer = InMemorySaver()
+
+# Cache del agente
+_agent = None
+
+
+@dataclass
+class AgentContext:
+    """
+    Esquema de contexto runtime para el agente.
+    Este contexto se inyecta en las tools que lo necesiten.
+    """
+    id_empresa: int
+    duracion_cita_minutos: int = 60
+    slots: int = 60
+    id_usuario: int = 1
+    session_id: str = ""
 
 
 def _validate_context(context: Dict[str, Any]) -> None:
@@ -41,26 +55,27 @@ def _validate_context(context: Dict[str, Any]) -> None:
     Raises:
         ValueError: Si faltan parámetros requeridos
     """
+    config_data = context.get("config", {})
     required_keys = ["id_empresa"]
-    missing = [k for k in required_keys if k not in context or context[k] is None]
+    missing = [k for k in required_keys if k not in config_data or config_data[k] is None]
     
     if missing:
-        raise ValueError(f"Context missing required keys: {missing}")
+        raise ValueError(f"Context missing required keys in config: {missing}")
     
-    logger.debug(f"[AGENT] Context validated: id_empresa={context.get('id_empresa')}")
+    logger.debug(f"[AGENT] Context validated: id_empresa={config_data.get('id_empresa')}")
 
 
-def _build_agent_prompt(personalidad: str) -> ChatPromptTemplate:
+def _build_system_prompt(personalidad: str) -> str:
     """
-    Construye el prompt para el agente con memoria y tools.
+    Construye el system prompt para el agente.
     
     Args:
         personalidad: Personalidad del agente
     
     Returns:
-        ChatPromptTemplate configurado
+        String con el system prompt
     """
-    system_template = f"""Eres un asistente especializado en **gestión de reservas**.
+    return f"""Eres un asistente especializado en **gestión de reservas**.
 
 ## Tu Personalidad
 {personalidad}
@@ -87,7 +102,7 @@ Tienes acceso a estas herramientas para ayudarte:
 ## Flujo de Trabajo
 1. **Saluda** de forma {personalidad}
 2. **Pregunta** por los datos que faltan (uno a la vez)
-3. **Usa check_availability** si el cliente pregunta o necesitas verificar
+3. **Usa check_availability** si el cliente pregunta o necesites verificar
 4. **Confirma** los datos con el cliente antes de crear la reserva
 5. **Usa create_booking** cuando tengas todo confirmado
 6. **Proporciona** el código de reserva al cliente
@@ -116,246 +131,74 @@ Luego: "Tenemos disponibilidad mañana. ¿A qué hora te gustaría?"
 **Tú:** Llamas create_booking("corte", "2026-01-28", "03:00 PM", "Juan", "987654321", session_id)
 Luego proporcionas el código que retornó la herramienta"""
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_template),
-        MessagesPlaceholder(variable_name="chat_history", optional=True),
-        ("human", "{{input}}"),
-        MessagesPlaceholder(variable_name="agent_scratchpad")
-    ])
-    
-    return prompt
 
-
-def _format_history_for_agent(history: list) -> list:
+def _get_agent(personalidad: str):
     """
-    Convierte el historial de memoria a formato de mensajes de LangChain.
+    Obtiene o crea el agente con la API moderna de LangChain 1.2+.
     
     Args:
-        history: Lista de turnos de conversación
+        personalidad: Personalidad del agente
     
     Returns:
-        Lista de mensajes (HumanMessage, AIMessage)
+        Agente configurado con tools y checkpointer
     """
-    messages = []
-    for turn in history:
-        messages.append(HumanMessage(content=turn["user"]))
-        messages.append(AIMessage(content=turn["response"]))
-    return messages
-
-
-def _extract_data_from_history_OLD(history: list, current_message: str) -> Dict[str, Optional[str]]:
-    """
-    Extrae datos de reserva del historial de conversación.
-    Mejorado para entender fechas naturales y más formatos.
-    
-    Returns:
-        Dict con: servicio, fecha, hora, nombre, contacto, sucursal
-    """
-    # Combinar todo el historial en un texto
-    all_text = ""
-    for turn in history:
-        all_text += f"{turn['user']} {turn['response']} "
-    all_text += current_message
-    
-    datos = {
-        "servicio": None,
-        "fecha": None,
-        "hora": None,
-        "nombre": None,
-        "contacto": None,
-        "sucursal": None
-    }
-    
-    # ===== FECHA MEJORADA =====
-    # 1. Buscar formato ISO (YYYY-MM-DD)
-    fecha_match = re.search(r'\d{4}-\d{2}-\d{2}', all_text)
-    if fecha_match:
-        datos["fecha"] = fecha_match.group(0)
-    # 2. Buscar fechas naturales con dateparser (si está disponible)
-    elif parse_date:
-        palabras_fecha = ["mañana", "hoy", "pasado", "próximo", "siguiente", "lunes", "martes", 
-                         "miércoles", "jueves", "viernes", "sábado", "domingo"]
-        for palabra in palabras_fecha:
-            if palabra in all_text.lower():
-                # Extraer contexto alrededor de la palabra
-                idx = all_text.lower().find(palabra)
-                contexto = all_text[max(0, idx-10):min(len(all_text), idx+30)]
-                fecha_parsed = parse_date(contexto, languages=['es'], settings={'PREFER_DATES_FROM': 'future'})
-                if fecha_parsed:
-                    datos["fecha"] = fecha_parsed.strftime("%Y-%m-%d")
-                    break
-    
-    # ===== HORA MEJORADA =====
-    # Buscar múltiples formatos de hora
-    hora_patterns = [
-        r'(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm))',  # 3:00 PM
-        r'(\d{1,2}\s*(?:AM|PM|am|pm))',         # 3 PM
-        r'(?:a\s+las|las)\s+(\d{1,2})(?::(\d{2}))?',  # "a las 3" o "las 3:30"
-    ]
-    
-    for pattern in hora_patterns:
-        hora_match = re.search(pattern, all_text, re.IGNORECASE)
-        if hora_match:
-            if pattern == hora_patterns[2]:  # Caso "a las 3"
-                hora_num = hora_match.group(1)
-                minutos = hora_match.group(2) or "00"
-                # Asumir PM si es hora de servicio típica (9-20)
-                hora_int = int(hora_num)
-                if hora_int < 8:  # Probablemente PM
-                    periodo = "PM"
-                elif hora_int >= 12:
-                    periodo = "PM" if hora_int < 24 else "AM"
-                else:
-                    periodo = "AM"
-                datos["hora"] = f"{hora_num}:{minutos} {periodo}"
-            else:
-                hora_str = hora_match.group(1)
-                # Normalizar formato
-                if ':' not in hora_str and any(x in hora_str.upper() for x in ['AM', 'PM']):
-                    hora_str = hora_str.replace('AM', ':00 AM').replace('PM', ':00 PM')
-                    hora_str = hora_str.replace('am', ':00 AM').replace('pm', ':00 PM')
-                datos["hora"] = hora_str.strip()
-            break
-    
-    # ===== NOMBRE MEJORADO =====
-    # Buscar después de palabras clave
-    nombre_patterns = [
-        r'(?:me llamo|mi nombre es|soy)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*)',
-        r'nombre[:\s]+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*)',
-    ]
-    for pattern in nombre_patterns:
-        nombre_match = re.search(pattern, all_text, re.IGNORECASE)
-        if nombre_match:
-            nombre = nombre_match.group(1).strip()
-            if len(nombre) > 2:  # Evitar nombres muy cortos
-                datos["nombre"] = nombre
-                break
-    
-    # ===== TELÉFONO MEJORADO (validado) =====
-    telefono_match = re.search(r'9\d{8}', all_text)
-    if telefono_match:
-        telefono = telefono_match.group(0)
-        # Validar que sea válido (9 dígitos empezando con 9)
-        if len(telefono) == 9 and telefono[0] == '9':
-            datos["contacto"] = telefono
-    
-    # ===== EMAIL MEJORADO (validado) =====
-    if not datos["contacto"]:  # Solo si no hay teléfono
-        email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', all_text)
-        if email_match:
-            email = email_match.group(0)
-            # Validación básica
-            if '@' in email and '.' in email.split('@')[1]:
-                datos["contacto"] = email
-    
-    # ===== SERVICIO MEJORADO =====
-    servicio_patterns = [
-        r'(?:servicio|reservar)\s+(?:de|para)?\s*([a-záéíóúñ\s]+?)(?:\.|,|para|el|en|$)',
-        r'(?:quiero|necesito)\s+(?:un|una)?\s*([a-záéíóúñ\s]+?)(?:\.|,|para|el|en|$)',
-    ]
-    for pattern in servicio_patterns:
-        servicio_match = re.search(pattern, all_text, re.IGNORECASE)
-        if servicio_match:
-            servicio = servicio_match.group(1).strip()
-            # Filtrar palabras no deseadas
-            palabras_filtrar = ['reservar', 'quiero', 'necesito', 'turno', 'cita']
-            servicio_limpio = ' '.join([
-                palabra for palabra in servicio.split() 
-                if palabra.lower() not in palabras_filtrar
-            ])
-            if len(servicio_limpio) > 3:  # Evitar palabras muy cortas
-                datos["servicio"] = servicio_limpio.title()
-                break
-    
-    # ===== SUCURSAL =====
-    sucursal_match = re.search(r'sucursal\s+([a-záéíóúñ]+)', all_text, re.IGNORECASE)
-    if sucursal_match:
-        datos["sucursal"] = sucursal_match.group(1).capitalize()
-    
-    return datos
-
-
-def _detect_confirmation_OLD(response_text: str) -> bool:
-    """
-    Detecta si la respuesta del LLM indica una confirmación de reserva.
-    
-    Busca palabras clave como "confirmada", "reserva exitosa", etc.
-    """
-    keywords = [
-        "reserva confirmada",
-        "confirmado exitosamente",
-        "ha sido confirmada",
-        "reserva exitosa",
-        "agendado correctamente",
-        "todo listo",
-        "confirmación exitosa"
-    ]
-    
-    response_lower = response_text.lower()
-    return any(keyword in response_lower for keyword in keywords)
-
-
-def _get_llm() -> ChatOpenAI:
-    """Lazy init del LLM (OpenAI) con configuración centralizada."""
-    global _llm
-    if _llm is None:
-        key = app_config.OPENAI_API_KEY
-        if not key:
-            raise ValueError("OPENAI_API_KEY no configurada")
-        
-        logger.info(f"[LLM] Inicializando ChatOpenAI - Model: {app_config.OPENAI_MODEL}, Timeout: {app_config.OPENAI_TIMEOUT}s")
-        
-        _llm = ChatOpenAI(
-            api_key=key,
-            model=app_config.OPENAI_MODEL,
-            temperature=0.7,  # Más creativo que el orquestador
-            max_tokens=app_config.MAX_TOKENS,
-            request_timeout=app_config.OPENAI_TIMEOUT,
-        )
-    return _llm
-
-
-def _get_agent_executor(context: Dict[str, Any]) -> AgentExecutor:
-    """
-    Lazy init del Agent Executor con tools.
-    
-    Args:
-        context: Contexto con configuración del bot
-    
-    Returns:
-        AgentExecutor configurado con tools
-    """
-    global _agent_executor
+    global _agent
     
     # Recrear agent cada vez para tener personalidad actualizada
     # (en producción, podrías cachear por personalidad)
-    llm = _get_llm()
     
-    # Extraer config
-    reserva_config = ReservaConfig(**context.get("config", {}))
-    personalidad = reserva_config.personalidad or "amable, profesional y eficiente"
+    logger.info(f"[AGENT] Creando agente con LangChain 1.2+ API")
     
-    # Construir prompt
-    prompt = _build_agent_prompt(personalidad)
-    
-    # Crear agente con tools
-    agent = create_openai_functions_agent(
-        llm=llm,
-        tools=AGENT_TOOLS,
-        prompt=prompt
+    # Inicializar modelo
+    model = init_chat_model(
+        f"openai:{app_config.OPENAI_MODEL}",
+        api_key=app_config.OPENAI_API_KEY,
+        temperature=0.7,  # Más creativo que el orquestador
+        max_tokens=app_config.MAX_TOKENS,
+        timeout=app_config.OPENAI_TIMEOUT,
     )
     
-    # Crear executor
-    agent_executor = AgentExecutor(
-        agent=agent,
+    # Construir system prompt
+    system_prompt = _build_system_prompt(personalidad)
+    
+    # Crear agente con API moderna
+    _agent = create_agent(
+        model=model,
         tools=AGENT_TOOLS,
-        verbose=True,  # Para debug
-        handle_parsing_errors=True,
-        max_iterations=5,  # Máximo 5 iteraciones de tool calling
-        return_intermediate_steps=False
+        system_prompt=system_prompt,
+        checkpointer=_checkpointer  # Memoria automática
     )
     
-    return agent_executor
+    logger.info(f"[AGENT] ✅ Agente creado - Tools: {len(AGENT_TOOLS)}, Checkpointer: InMemorySaver")
+    
+    return _agent
+
+
+# Funciones antiguas removidas - ya no necesarias con LangChain 1.2+
+# La extracción de datos ahora la maneja el LLM con function calling
+# La confirmación se detecta automáticamente en el flujo
+
+
+def _prepare_agent_context(context: Dict[str, Any], session_id: str) -> AgentContext:
+    """
+    Prepara el contexto runtime para inyectar a las tools del agente.
+    
+    Args:
+        context: Contexto del orquestador
+        session_id: ID de sesión
+    
+    Returns:
+        AgentContext configurado
+    """
+    config_data = context.get("config", {})
+    
+    return AgentContext(
+        id_empresa=config_data.get("id_empresa", 1),
+        duracion_cita_minutos=config_data.get("duracion_cita_minutos", 60),
+        slots=config_data.get("slots", 60),
+        id_usuario=config_data.get("agendar_usuario", 1),
+        session_id=session_id
+    )
 
 
 async def process_reserva_message(
@@ -364,15 +207,17 @@ async def process_reserva_message(
     context: Dict[str, Any]
 ) -> str:
     """
-    Procesa un mensaje del cliente sobre reservas usando LangChain Agent.
+    Procesa un mensaje del cliente sobre reservas usando LangChain 1.2+ Agent.
     
     El agente tiene acceso a tools internas:
     - check_availability: Consulta horarios disponibles
     - create_booking: Crea reserva con validación real
     
+    La memoria es automática gracias al checkpointer (InMemorySaver).
+    
     Args:
         message: Mensaje del cliente
-        session_id: ID de sesión para tracking
+        session_id: ID de sesión para tracking y memoria
         context: Contexto adicional (config del bot, id_empresa, etc.)
     
     Returns:
@@ -396,55 +241,59 @@ async def process_reserva_message(
         record_chat_error("context_error")
         return f"Error de configuración: {str(e)}"
     
-    # 1. CARGAR HISTORIAL de esta sesión
-    history = get_history(session_id, limit=4)
-    logger.debug(f"[AGENT] Historial cargado: {len(history)} turnos")
+    # 1. OBTENER CONFIGURACIÓN
+    config_data = context.get("config", {})
+    reserva_config = ReservaConfig(**config_data)
+    personalidad = reserva_config.personalidad or "amable, profesional y eficiente"
     
-    # Formatear historial para el agente
-    chat_history = _format_history_for_agent(history)
-    
-    # 2. OBTENER AGENT EXECUTOR
+    # 2. CREAR AGENTE con personalidad
     try:
-        agent_executor = _get_agent_executor(context)
+        agent = _get_agent(personalidad)
     except Exception as e:
         logger.error(f"[AGENT] Error creando agent: {e}", exc_info=True)
         record_chat_error("agent_creation_error")
         return "Disculpa, tuve un problema de configuración. ¿Podrías intentar nuevamente?"
     
-    # 3. PREPARAR INPUT para el agent
-    # Inyectar parámetros de contexto que las tools necesitarán
+    # 3. PREPARAR CONTEXT RUNTIME para tools
+    agent_context = _prepare_agent_context(context, session_id)
     
-    # Extraer config del contexto (viene del orquestador)
-    config_data = context.get("config", {})
-    
-    agent_input = {
-        "input": message,
-        "chat_history": chat_history,
-        # Pasar contexto a las tools a través de config
-        "id_empresa": config_data.get("id_empresa", 1),
-        "duracion_cita_minutos": config_data.get("duracion_cita_minutos", 60),
-        "slots": config_data.get("slots", 60),
-        "id_usuario": config_data.get("agendar_usuario", 1),
-        "session_id": session_id
+    # 4. PREPARAR CONFIG para checkpointer (memoria automática)
+    config = {
+        "configurable": {
+            "thread_id": session_id  # thread_id = session_id para memoria por sesión
+        }
     }
     
-    # 4. EJECUTAR AGENT
+    # 5. EJECUTAR AGENT con API moderna
     try:
-        logger.info(f"[AGENT] Invocando agent con input: {message[:100]}...")
+        logger.info(f"[AGENT] Invocando agent - Session: {session_id}, Message: {message[:100]}...")
         
         with track_chat_response():
             with track_llm_call():
-                result = await agent_executor.ainvoke(agent_input)
+                # Nueva API: .invoke() con messages
+                result = agent.invoke(
+                    {
+                        "messages": [
+                            {"role": "user", "content": message}
+                        ]
+                    },
+                    config=config,
+                    context=agent_context  # Runtime context para tools
+                )
         
-        response_text = result["output"]
+        # Extraer respuesta (última AI message)
+        messages = result.get("messages", [])
+        if messages:
+            last_message = messages[-1]
+            response_text = last_message.content if hasattr(last_message, 'content') else str(last_message)
+        else:
+            response_text = "Lo siento, no pude procesar tu solicitud."
+        
         logger.info(f"[AGENT] ✅ Respuesta generada: {response_text[:200]}...")
     
     except Exception as e:
         logger.error(f"[AGENT] ❌ Error al ejecutar agent: {e}", exc_info=True)
         record_chat_error("agent_execution_error")
         return "Disculpa, tuve un problema al procesar tu mensaje. ¿Podrías intentar nuevamente?"
-    
-    # 5. GUARDAR en memoria
-    add_turn(session_id, message, response_text)
     
     return response_text

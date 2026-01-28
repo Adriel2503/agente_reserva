@@ -3,11 +3,11 @@ Tools internas del agente de reservas.
 Estas tools son usadas por el LLM a través de function calling,
 NO están expuestas directamente al orquestador.
 
-Versión mejorada con logging, métricas y validación.
+Versión mejorada con logging, métricas, validación y runtime context (LangChain 1.2+).
 """
 
 from typing import Any, Dict
-from langchain.tools import tool
+from langchain.tools import tool, ToolRuntime
 
 try:
     from .validator import ScheduleValidator
@@ -29,9 +29,7 @@ logger = get_logger(__name__)
 async def check_availability(
     service: str,
     date: str,
-    id_empresa: int = 1,
-    duracion_cita_minutos: int = 60,
-    slots: int = 60
+    runtime: ToolRuntime = None
 ) -> str:
     """
     Consulta horarios disponibles para un servicio y fecha específicos.
@@ -42,9 +40,7 @@ async def check_availability(
     Args:
         service: Nombre del servicio (ej: "corte", "manicure", "consulta")
         date: Fecha en formato ISO (YYYY-MM-DD)
-        id_empresa: ID de la empresa
-        duracion_cita_minutos: Duración de la cita en minutos
-        slots: Slots disponibles
+        runtime: Runtime context automático (inyectado por LangChain)
     
     Returns:
         Texto con horarios disponibles o sugerencias
@@ -54,6 +50,12 @@ async def check_availability(
         "Horarios sugeridos: Lunes 27/01 - 09:00 AM, 10:00 AM, 02:00 PM..."
     """
     logger.info(f"[TOOL] check_availability - Servicio: {service}, Fecha: {date}")
+    
+    # Obtener configuración del runtime context
+    ctx = runtime.context if runtime else None
+    id_empresa = ctx.id_empresa if ctx else 1
+    duracion_cita_minutos = ctx.duracion_cita_minutos if ctx else 60
+    slots = ctx.slots if ctx else 60
     
     try:
         with track_tool_execution("check_availability"):
@@ -90,11 +92,7 @@ async def create_booking(
     time: str,
     customer_name: str,
     customer_contact: str,
-    session_id: str,
-    id_empresa: int = 1,
-    duracion_cita_minutos: int = 60,
-    slots: int = 60,
-    id_usuario: int = 1
+    runtime: ToolRuntime = None
 ) -> str:
     """
     Crea una nueva reserva en el sistema con validación y confirmación real.
@@ -114,20 +112,24 @@ async def create_booking(
         time: Hora de la reserva (HH:MM AM/PM)
         customer_name: Nombre completo del cliente
         customer_contact: Teléfono (9XXXXXXXX) o email del cliente
-        session_id: ID de sesión del cliente
-        id_empresa: ID de la empresa
-        duracion_cita_minutos: Duración en minutos
-        slots: Slots disponibles
-        id_usuario: ID del usuario que agenda
+        runtime: Runtime context automático (inyectado por LangChain)
     
     Returns:
         Mensaje de confirmación con código de reserva o mensaje de error
     
     Examples:
-        >>> await create_booking("Corte", "2026-01-27", "02:00 PM", "Juan Pérez", "987654321", "session-123")
+        >>> await create_booking("Corte", "2026-01-27", "02:00 PM", "Juan Pérez", "987654321")
         "✅ Reserva confirmada exitosamente. Código: RES-12345"
     """
     logger.info(f"[TOOL] create_booking - {service} | {date} {time} | {customer_name}")
+    
+    # Obtener configuración del runtime context
+    ctx = runtime.context if runtime else None
+    id_empresa = ctx.id_empresa if ctx else 1
+    duracion_cita_minutos = ctx.duracion_cita_minutos if ctx else 60
+    slots = ctx.slots if ctx else 60
+    id_usuario = ctx.id_usuario if ctx else 1
+    session_id = ctx.session_id if ctx else "unknown"
     
     try:
         with track_tool_execution("create_booking"):

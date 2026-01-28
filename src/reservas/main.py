@@ -31,13 +31,12 @@ setup_logging(
 logger = get_logger(__name__)
 
 # Inicializar información del agente para métricas
-initialize_agent_info(model=app_config.OPENAI_MODEL, version="1.0.0")
+initialize_agent_info(model=app_config.OPENAI_MODEL, version="2.0.0")
 
 # Inicializar servidor MCP
 mcp = FastMCP(
     name="Agente Reservas - MaravIA",
-    version="1.0.0",
-    description="Agente especializado en gestión de reservas, turnos y citas con LangChain Agent"
+    instructions="Agente especializado en gestión de reservas, turnos y citas con LangChain 1.2+ Agent"
 )
 
 
@@ -48,19 +47,20 @@ async def chat(
     context: Dict[str, Any] | None = None
 ) -> str:
     """
-    Agente especializado en gestión de reservas con LangChain Agent.
+    Agente especializado en gestión de reservas con LangChain 1.2+ Agent.
     
     Esta es la ÚNICA herramienta que el orquestador debe llamar.
     Internamente, el agente usa tools propias para:
-    - Consultar disponibilidad de horarios
-    - Crear reservas con validación real
+    - Consultar disponibilidad de horarios (check_availability)
+    - Crear reservas con validación real (create_booking)
     
     El agente maneja la conversación completa de forma autónoma,
     decidiendo cuándo usar cada tool según el contexto.
+    La memoria es automática gracias al checkpointer (InMemorySaver).
     
     Args:
         message: Mensaje del cliente que quiere reservar
-        session_id: ID de sesión único para tracking de la conversación
+        session_id: ID de sesión único para tracking y memoria
         context: Contexto adicional requerido:
             - config.id_empresa (int, requerido): ID de la empresa
             - config.duracion_cita_minutos (int, opcional): Duración en minutos (default: 60)
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     # Ejecutar servidor MCP
     try:
         mcp.run(
-            transport="stdio",  # Protocolo MCP estándar
+            transport="http",  # HTTP para conectar servicios separados
             host=app_config.SERVER_HOST,
             port=app_config.SERVER_PORT
         )

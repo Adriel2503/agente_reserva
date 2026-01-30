@@ -3,6 +3,7 @@ Sucursales públicas: fetch desde API MaravIA y formateo para system prompt.
 Misma API que agente_cliente (OBTENER_SUCURSALES_PUBLICAS).
 """
 
+import json
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -73,13 +74,15 @@ def fetch_sucursales_publicas(id_empresa: Optional[Any]) -> str:
     if id_empresa is None or id_empresa == "":
         return "No hay sucursales cargadas."
 
+    payload_sucursales = {
+        "codOpe": "OBTENER_SUCURSALES_PUBLICAS",
+        "id_empresa": id_empresa,
+    }
+    print("[SUCURSALES] JSON enviado a ws_informacion_ia.php (OBTENER_SUCURSALES_PUBLICAS):", json.dumps(payload_sucursales, ensure_ascii=False, indent=2))
     try:
         response = requests.post(
             INFORMATION_ENDPOINT,
-            json={
-                "codOpe": "OBTENER_SUCURSALES_PUBLICAS",
-                "id_empresa": id_empresa,
-            },
+            json=payload_sucursales,
             timeout=10,
             headers={"Content-Type": "application/json", "Accept": "application/json"},
         )

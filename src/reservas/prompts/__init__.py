@@ -4,13 +4,25 @@ Prompts del agente de reservas. Builder del system prompt.
 
 from pathlib import Path
 from typing import Any, Dict, List
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from ..sucursales import fetch_sucursales_publicas
+
 _TEMPLATES_DIR = Path(__file__).resolve().parent
+_ZONA_PERU = ZoneInfo("America/Lima")
+
 _DEFAULTS: Dict[str, Any] = {
     "personalidad": "amable, profesional y eficiente",
+    "informacion_sucursales": "No hay sucursales cargadas.",
 }
+
+
+def _now_peru() -> datetime:
+    """Fecha y hora actual en Perú (America/Lima)."""
+    return datetime.now(_ZONA_PERU)
 
 
 def _apply_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -30,12 +42,12 @@ def build_reserva_system_prompt(
     Construye el system prompt del agente de reservas.
     
     Args:
-        config: Diccionario con nombre_negocio, servicios, horarios, etc.
-                Puede venir de ReservaConfig.model_dump() o similar.
+        config: Diccionario con id_empresa, personalidad, etc.
+                Si tiene id_empresa, se obtienen sucursales de la API y se inyectan.
         history: Lista de turnos previos [{"user": "...", "response": "..."}]
     
     Returns:
-        System prompt formateado con historial.
+        System prompt formateado con historial y sucursales (si aplica).
     """
     env = Environment(
         loader=FileSystemLoader(str(_TEMPLATES_DIR)),
@@ -44,6 +56,16 @@ def build_reserva_system_prompt(
     template = env.get_template("reserva_system.j2")
     
     variables = _apply_defaults(config)
+    
+    # Fecha y hora actual en Perú (para que el agente sepa "hoy" y "mañana")
+    now = _now_peru()
+    variables["fecha_iso"] = variables.get("fecha_iso") or now.strftime("%Y-%m-%d")
+    variables["fecha_formateada"] = variables.get("fecha_formateada") or now.strftime("%d/%m/%Y")
+    variables["hora_actual"] = now.strftime("%I:%M %p")
+    
+    # Obtener sucursales desde la API e inyectar en el prompt
+    id_empresa = config.get("id_empresa")
+    variables["informacion_sucursales"] = fetch_sucursales_publicas(id_empresa)
     
     # Agregar historial
     variables["history"] = history or []

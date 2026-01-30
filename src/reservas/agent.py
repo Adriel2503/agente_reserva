@@ -40,6 +40,8 @@ class AgentContext:
     duracion_cita_minutos: int = 60
     slots: int = 60
     id_usuario: int = 1
+    agendar_sucursal: int = 0
+    id_prospecto: str = ""
     session_id: str = ""
 
 
@@ -139,12 +141,22 @@ def _prepare_agent_context(context: Dict[str, Any], session_id: str) -> AgentCon
     # agendar_usuario viene como bool del orquestador, convertir a int
     if "agendar_usuario" in config_data and config_data["agendar_usuario"] is not None:
         agendar_usuario = config_data["agendar_usuario"]
-        # Convertir bool a int si es necesario
         if isinstance(agendar_usuario, bool):
             context_params["id_usuario"] = 1 if agendar_usuario else 0
         elif isinstance(agendar_usuario, int):
             context_params["id_usuario"] = agendar_usuario
-    
+
+    # agendar_sucursal: bool o int → int
+    if "agendar_sucursal" in config_data and config_data["agendar_sucursal"] is not None:
+        agendar_sucursal = config_data["agendar_sucursal"]
+        if isinstance(agendar_sucursal, bool):
+            context_params["agendar_sucursal"] = 1 if agendar_sucursal else 0
+        elif isinstance(agendar_sucursal, int):
+            context_params["agendar_sucursal"] = agendar_sucursal
+
+    # id_prospecto: usar el del config o session_id como fallback (para AGENDAR_REUNION)
+    context_params["id_prospecto"] = str(config_data.get("id_prospecto") or session_id)
+
     return AgentContext(**context_params)
 
 

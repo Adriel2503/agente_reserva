@@ -1,10 +1,15 @@
 """
 Función para confirmar reserva en el endpoint real.
-Versión mejorada con async httpx, logging y métricas.
+Versión alineada con la documentación n8n: codOpe AGENDAR_REUNION,
+titulo, fecha_inicio, fecha_fin, id_prospecto, agendar_usuario, agendar_sucursal, sucursal.
 """
 
+import json
+import re
+from datetime import datetime, timedelta
+
 import httpx
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 try:
     from .logger import get_logger
@@ -20,6 +25,33 @@ logger = get_logger(__name__)
 AGENDAR_REUNIONES_ENDPOINT = "https://api.maravia.pe/servicio/n8n/ws_agendar_reunion.php"
 
 
+def _parse_time_to_24h(hora: str) -> str:
+    """Convierte hora en formato HH:MM AM/PM a HH:MM (24h)."""
+    hora = hora.strip()
+    match = re.match(r"(\d{1,2}):(\d{2})\s*(AM|PM)", hora, re.IGNORECASE)
+    if not match:
+        raise ValueError(f"Hora no válida (esperado HH:MM AM/PM): {hora}")
+    h, m, ampm = int(match.group(1)), int(match.group(2)), match.group(3).upper()
+    if ampm == "PM" and h != 12:
+        h += 12
+    elif ampm == "AM" and h == 12:
+        h = 0
+    return f"{h:02d}:{m:02d}:00"
+
+
+def _build_fecha_inicio_fin(fecha: str, hora: str, duracion_minutos: int) -> tuple:
+    """Construye fecha_inicio y fecha_fin en formato YYYY-MM-DD HH:MM:SS."""
+    time_24 = _parse_time_to_24h(hora)
+    fecha_inicio = f"{fecha} {time_24}"
+    try:
+        dt_start = datetime.strptime(fecha_inicio, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        raise ValueError(f"Fecha/hora no válidos: {fecha} {hora}")
+    dt_end = dt_start + timedelta(minutes=duracion_minutos)
+    fecha_fin = dt_end.strftime("%Y-%m-%d %H:%M:%S")
+    return fecha_inicio, fecha_fin
+
+
 async def confirm_booking(
     id_empresa: int,
     id_prospecto: str,
@@ -28,12 +60,14 @@ async def confirm_booking(
     fecha: str,
     hora: str,
     servicio: str,
-    id_usuario: int,
-    sucursal: str = None
+    agendar_usuario: int,
+    agendar_sucursal: int,
+    duracion_cita_minutos: int = 60,
+    sucursal: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Confirma una reserva en el endpoint real de MaravIA.
-    
+    Confirma una reserva en el endpoint real de MaravIA (payload según documentación n8n).
+
     Args:
         id_empresa: ID de la empresa
         id_prospecto: ID del prospecto/cliente
@@ -41,37 +75,48 @@ async def confirm_booking(
         correo_o_telefono: Correo electrónico o teléfono del cliente
         fecha: Fecha en formato YYYY-MM-DD
         hora: Hora en formato HH:MM AM/PM
-        servicio: Servicio/motivo de la reserva
-        id_usuario: ID del usuario que agenda
+        servicio: Servicio/motivo de la reserva (usado en titulo/descripción)
+        agendar_usuario: 1 = agendar por usuario, 0 = no
+        agendar_sucursal: 1 = agendar por sucursal, 0 = no
+        duracion_cita_minutos: Minutos de la cita para calcular fecha_fin
         sucursal: (Opcional) Sucursal donde se realiza la reserva
-    
+
     Returns:
-        Dict con:
-        - success: bool
-        - codigo: str (código de reserva si success=True)
-        - message: str (mensaje descriptivo)
-        - error: str (si hubo error)
+        Dict con: success, codigo, message, error
     """
     record_booking_attempt()
-    
+
     try:
+        fecha_inicio, fecha_fin = _build_fecha_inicio_fin(fecha, hora, duracion_cita_minutos)
+    except ValueError as e:
+        logger.warning(f"[BOOKING] Fecha/hora inválidos: {e}")
+        record_booking_failure("invalid_datetime")
+        return {
+            "success": False,
+            "codigo": None,
+            "message": "Formato de fecha u hora inválido",
+            "error": str(e),
+        }
+
+    try:
+        titulo = f"Reunion para el usuario: {nombre_completo}"
+
         payload = {
             "codOpe": "AGENDAR_REUNION",
             "id_empresa": id_empresa,
+            "titulo": titulo,
+            "fecha_inicio": fecha_inicio,
+            "fecha_fin": fecha_fin,
             "id_prospecto": id_prospecto,
-            "nombre_completo": nombre_completo,
-            "correo_electronico": correo_o_telefono,
-            "fecha_cita": fecha,
-            "hora_cita": hora,
-            "servicio": servicio,
-            "id_usuario": id_usuario
+            "agendar_usuario": agendar_usuario,
+            "agendar_sucursal": agendar_sucursal,
+            "sucursal": (sucursal.strip() if sucursal and sucursal.strip() else ""),
         }
-        
-        if sucursal:
-            payload["sucursal"] = sucursal
         
         logger.info(f"[BOOKING] Confirmando reserva: {servicio} - {fecha} {hora} - {nombre_completo}")
         logger.debug(f"[BOOKING] Payload: {payload}")
+        # Print para ver en consola exactamente qué JSON se envía al agendar reserva
+        print("[BOOKING] JSON enviado a ws_agendar_reunion.php:", json.dumps(payload, ensure_ascii=False, indent=2))
         
         with track_api_call("agendar_reunion"):
             async with httpx.AsyncClient(timeout=app_config.API_TIMEOUT) as client:

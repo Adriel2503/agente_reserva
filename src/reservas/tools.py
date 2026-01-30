@@ -6,7 +6,7 @@ NO están expuestas directamente al orquestador.
 Versión mejorada con logging, métricas, validación y runtime context (LangChain 1.2+).
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from langchain.tools import tool, ToolRuntime
 
 try:
@@ -57,7 +57,8 @@ async def check_availability(
     duracion_cita_minutos = ctx.duracion_cita_minutos if ctx else 60
     slots = ctx.slots if ctx else 60
     id_usuario = ctx.id_usuario if ctx else 1
-    
+    agendar_sucursal = ctx.agendar_sucursal if ctx else 0
+
     try:
         with track_tool_execution("check_availability"):
             # Crear validator con configuración
@@ -67,11 +68,11 @@ async def check_availability(
                 slots=slots,
                 es_reservacion=True,
                 agendar_usuario=id_usuario,
-                agendar_sucursal=0
+                agendar_sucursal=agendar_sucursal
             )
             
-            # Obtener recomendaciones de horarios
-            recommendations = await validator.recommendation()
+            # Obtener recomendaciones (pasa la fecha: si es hoy/mañana usa SUGERIR_HORARIOS; si no, horario de ese día)
+            recommendations = await validator.recommendation(fecha_solicitada=date)
             
             if recommendations and recommendations.get("text"):
                 logger.info(f"[TOOL] check_availability - Recomendaciones obtenidas")
@@ -93,6 +94,7 @@ async def create_booking(
     time: str,
     customer_name: str,
     customer_contact: str,
+    sucursal: Optional[str] = None,
     runtime: ToolRuntime = None
 ) -> str:
     """
@@ -104,6 +106,7 @@ async def create_booking(
     - Hora (formato HH:MM AM/PM)
     - Nombre del cliente
     - Contacto (teléfono o email)
+    - Sucursal: si hay una sola en la lista, pásala; si hay varias, usa la que el cliente eligió (nombre exacto de la lista).
     
     La herramienta validará el horario y creará la reserva en el sistema real.
     
@@ -113,13 +116,14 @@ async def create_booking(
         time: Hora de la reserva (HH:MM AM/PM)
         customer_name: Nombre completo del cliente
         customer_contact: Teléfono (9XXXXXXXX) o email del cliente
+        sucursal: Nombre de la sucursal (exactamente como en la lista inyectada). Una sola sucursal: úsala; varias: la que el cliente eligió.
         runtime: Runtime context automático (inyectado por LangChain)
     
     Returns:
         Mensaje de confirmación con código de reserva o mensaje de error
     
     Examples:
-        >>> await create_booking("Corte", "2026-01-27", "02:00 PM", "Juan Pérez", "987654321")
+        >>> await create_booking("Corte", "2026-01-27", "02:00 PM", "Juan Pérez", "987654321", "Miraflores")
         "Reserva confirmada exitosamente. Código: RES-12345"
     """
     logger.info(f"[TOOL] create_booking - {service} | {date} {time} | {customer_name}")
@@ -130,8 +134,9 @@ async def create_booking(
     duracion_cita_minutos = ctx.duracion_cita_minutos if ctx else 60
     slots = ctx.slots if ctx else 60
     id_usuario = ctx.id_usuario if ctx else 1
-    session_id = ctx.session_id if ctx else "unknown"
-    
+    agendar_sucursal = ctx.agendar_sucursal if ctx else 0
+    id_prospecto = ctx.id_prospecto if ctx else ""
+
     try:
         with track_tool_execution("create_booking"):
             # 1. VALIDAR datos de entrada
@@ -156,7 +161,7 @@ async def create_booking(
                 slots=slots,
                 es_reservacion=True,
                 agendar_usuario=id_usuario,
-                agendar_sucursal=0
+                agendar_sucursal=agendar_sucursal
             )
             
             validation = await validator.validate(date, time)
@@ -167,17 +172,21 @@ async def create_booking(
                 logger.warning(f"[TOOL] create_booking - Horario no válido: {validation['error']}")
                 return f"{validation['error']}\n\nPor favor elige otra fecha u hora."
             
-            # 3. CONFIRMAR booking en endpoint real
+            # 3. CONFIRMAR booking en endpoint real (payload doc: titulo, fecha_inicio, fecha_fin, agendar_*)
             logger.debug("[TOOL] create_booking - Confirmando en API")
+            id_prospecto_val = id_prospecto or (str(ctx.session_id) if ctx else "")
             booking_result = await confirm_booking(
                 id_empresa=id_empresa,
-                id_prospecto=session_id,
+                id_prospecto=id_prospecto_val,
                 nombre_completo=customer_name,
                 correo_o_telefono=customer_contact,
                 fecha=date,
                 hora=time,
                 servicio=service,
-                id_usuario=id_usuario
+                agendar_usuario=id_usuario,
+                agendar_sucursal=agendar_sucursal,
+                duracion_cita_minutos=duracion_cita_minutos,
+                sucursal=sucursal.strip() if sucursal and sucursal.strip() else None,
             )
             
             logger.debug(f"[TOOL] create_booking - Resultado: {booking_result}")

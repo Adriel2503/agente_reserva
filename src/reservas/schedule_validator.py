@@ -7,6 +7,7 @@ import httpx
 import threading
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 try:
     from .logger import get_logger
@@ -33,6 +34,20 @@ DAY_MAPPING = {
     5: "reunion_sabado",
     6: "reunion_domingo"
 }
+
+# Días en español para formateo de sugerencias
+DIAS_ESPANOL = {
+    "Monday": "Lunes",
+    "Tuesday": "Martes",
+    "Wednesday": "Miércoles",
+    "Thursday": "Jueves",
+    "Friday": "Viernes",
+    "Saturday": "Sábado",
+    "Sunday": "Domingo"
+}
+
+_ZONA_PERU = ZoneInfo("America/Lima")
+_DIAS_NOMBRE = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
 # ========== CACHE GLOBAL CON TTL ==========
 
@@ -420,34 +435,128 @@ class ScheduleValidator:
         logger.info(f"[VALIDATION] ✅ Horario válido: {fecha_str} {hora_str}")
         return {"valid": True, "error": None}
 
-    async def recommendation(self) -> Dict[str, Any]:
+    async def recommendation(self, fecha_solicitada: Optional[str] = None) -> Dict[str, Any]:
         """
         Genera recomendaciones de horarios disponibles.
+        Si fecha_solicitada es hoy o mañana (o no se pasa), usa SUGERIR_HORARIOS (hoy/mañana).
+        Si fecha_solicitada es otro día, devuelve solo el horario de atención de ese día (sin slots sugeridos).
+        
+        Args:
+            fecha_solicitada: Fecha en YYYY-MM-DD que el cliente está consultando. Opcional.
         
         Returns:
-            Dict con recomendaciones de horarios
+            Dict con "text" y opcionalmente "recommendations", "total", "message"
         """
+        now_peru = datetime.now(_ZONA_PERU)
+        hoy_iso = now_peru.strftime("%Y-%m-%d")
+        manana_iso = (now_peru + timedelta(days=1)).strftime("%Y-%m-%d")
+
+        # Si el cliente preguntó por una fecha que NO es hoy ni mañana, no usar SUGERIR_HORARIOS
+        # (solo devuelve hoy/mañana). Mostrar solo horario de atención de ese día.
+        if fecha_solicitada:
+            try:
+                fecha_obj = datetime.strptime(fecha_solicitada.strip(), "%Y-%m-%d")
+                fecha_iso = fecha_obj.strftime("%Y-%m-%d")
+                if fecha_iso != hoy_iso and fecha_iso != manana_iso:
+                    schedule = await self._fetch_schedule()
+                    if not schedule:
+                        return {
+                            "text": "Para esa fecha no tengo el horario cargado. Indica un horario que prefieras y lo verifico."
+                        }
+                    dia_semana = fecha_obj.weekday()
+                    campo = DAY_MAPPING.get(dia_semana)
+                    horario_dia = schedule.get(campo, "") if campo else ""
+                    nombre_dia = _DIAS_NOMBRE[dia_semana] if dia_semana < len(_DIAS_NOMBRE) else ""
+                    if horario_dia and horario_dia.upper() not in ["NO DISPONIBLE", "CERRADO", "-", "N/A", ""]:
+                        texto = f"Para el día {fecha_solicitada} ({nombre_dia.capitalize()}): horario de atención {horario_dia}. Indica un horario que prefieras y lo verifico."
+                    else:
+                        texto = f"Para el día {fecha_solicitada} ({nombre_dia.capitalize()}) no hay atención. Elige otro día."
+                    return {"text": texto}
+            except ValueError:
+                pass
+
+        # 1. Intentar SUGERIR_HORARIOS (hoy y mañana)
+        payload = {
+            "codOpe": "SUGERIR_HORARIOS",
+            "id_empresa": self.id_empresa,
+            "duracion_minutos": self.duracion_minutos,
+            "slots": self.slots,
+            "agendar_usuario": self.agendar_usuario,
+            "agendar_sucursal": self.agendar_sucursal,
+        }
+        if self.sucursal:
+            payload["sucursal"] = self.sucursal
+
+        try:
+            with track_api_call("sugerir_horarios"):
+                async with httpx.AsyncClient(timeout=app_config.API_TIMEOUT) as client:
+                    response = await client.post(
+                        AGENDAR_REUNIONES_ENDPOINT,
+                        json=payload,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+
+            if data.get("success"):
+                sugerencias = data.get("sugerencias", [])
+                mensaje = data.get("mensaje", "Horarios disponibles encontrados")
+                total = data.get("total", 0)
+                if sugerencias and total > 0:
+                    sugerencias_texto = []
+                    for i, sugerencia in enumerate(sugerencias, 1):
+                        dia = sugerencia.get("dia", "")
+                        hora_legible = sugerencia.get("hora_legible", "")
+                        disponible = sugerencia.get("disponible", True)
+                        fecha_inicio = sugerencia.get("fecha_inicio", "")
+                        if dia and hora_legible:
+                            if dia == "hoy":
+                                texto = f"Hoy a las {hora_legible}"
+                            elif dia == "mañana":
+                                texto = f"Mañana a las {hora_legible}"
+                            elif fecha_inicio:
+                                try:
+                                    fecha_obj = datetime.strptime(fecha_inicio, "%Y-%m-%d %H:%M:%S")
+                                    dia_ingles = fecha_obj.strftime("%A")
+                                    dia_nombre = DIAS_ESPANOL.get(dia_ingles, dia_ingles)
+                                    texto = f"{dia_nombre} {fecha_obj.strftime('%d/%m')} a las {hora_legible}"
+                                except ValueError:
+                                    texto = f"{dia} a las {hora_legible}"
+                            else:
+                                texto = f"{dia} a las {hora_legible}"
+                            if not disponible:
+                                texto += " (ocupado)"
+                            sugerencias_texto.append(f"{i}. {texto}")
+                    if sugerencias_texto:
+                        texto_final = f"{mensaje}\n\n" + "\n".join(sugerencias_texto) if mensaje else "Horarios sugeridos:\n\n" + "\n".join(sugerencias_texto)
+                        return {
+                            "text": texto_final,
+                            "recommendations": sugerencias,
+                            "total": total,
+                            "message": mensaje,
+                        }
+        except (httpx.TimeoutException, httpx.HTTPError) as e:
+            logger.warning("[RECOMMENDATION] Error en SUGERIR_HORARIOS, usando fallback: %s", e)
+        except Exception as e:
+            logger.warning("[RECOMMENDATION] Error inesperado en SUGERIR_HORARIOS: %s", e)
+
+        # 2. Fallback: horario por día (OBTENER_HORARIO_REUNIONES)
         schedule = await self._fetch_schedule()
         if not schedule:
             return {
                 "text": "Horarios disponibles:\n• Lunes a Viernes: 09:00 AM - 06:00 PM\n• Sábados: 09:00 AM - 01:00 PM"
             }
-        
-        # Construir texto de recomendación basado en el schedule
         dias = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
         horarios = []
-        
         for idx, dia in enumerate(dias):
             campo = DAY_MAPPING[idx]
             horario = schedule.get(campo, "")
             if horario and horario.upper() not in ["NO DISPONIBLE", "CERRADO", "-", "N/A", ""]:
                 horarios.append(f"• {dia.capitalize()}: {horario}")
-        
         if horarios:
             text = "Horarios disponibles:\n" + "\n".join(horarios)
         else:
             text = "Consulta horarios disponibles directamente con nosotros."
-        
         return {"text": text}
 
 

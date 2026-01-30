@@ -110,7 +110,7 @@ async def confirm_booking(
             "id_prospecto": id_prospecto,
             "agendar_usuario": agendar_usuario,
             "agendar_sucursal": agendar_sucursal,
-            "sucursal": (sucursal.strip() if sucursal and sucursal.strip() else ""),
+            "sucursal": (sucursal.strip() if sucursal and sucursal.strip() else "") or "No hay sucursal registrada",
         }
         
         logger.info(f"[BOOKING] Confirmando reserva: {servicio} - {fecha} {hora} - {nombre_completo}")

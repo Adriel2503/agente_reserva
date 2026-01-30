@@ -1,0 +1,9 @@
+services:
+  agent_reservas:
+    build:
+      context: .
+    ports:
+      - "8003:8003"
+    env_file:
+      - .env
+    restart: unless-stopped

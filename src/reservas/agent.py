@@ -154,8 +154,8 @@ def _prepare_agent_context(context: Dict[str, Any], session_id: str) -> AgentCon
         elif isinstance(agendar_sucursal, int):
             context_params["agendar_sucursal"] = agendar_sucursal
 
-    # id_prospecto: usar el del config o session_id como fallback (para AGENDAR_REUNION)
-    context_params["id_prospecto"] = str(config_data.get("id_prospecto") or session_id)
+    # id_prospecto: solo session_id (el orquestador ya no envía id_prospecto en config)
+    context_params["id_prospecto"] = str(session_id)
 
     return AgentContext(**context_params)
 

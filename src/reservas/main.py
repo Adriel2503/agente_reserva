@@ -63,7 +63,6 @@ async def chat(
         session_id: ID de sesión único para tracking y memoria
         context: Contexto adicional requerido:
             - config.id_empresa (int, requerido): ID de la empresa
-            - config.id_prospecto (int, opcional): ID del prospecto; si no viene, se usa session_id
             - config.agendar_usuario (bool o int, opcional): 1=agendar por usuario, 0=no (default: 1)
             - config.agendar_sucursal (bool o int, opcional): 1=agendar por sucursal, 0=no (default: 0)
             - config.duracion_cita_minutos (int, opcional): Duración en minutos (default: 60)

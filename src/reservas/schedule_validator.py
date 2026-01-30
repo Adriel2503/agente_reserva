@@ -438,14 +438,19 @@ class ScheduleValidator:
         logger.info(f"[VALIDATION] ✅ Horario válido: {fecha_str} {hora_str}")
         return {"valid": True, "error": None}
 
-    async def recommendation(self, fecha_solicitada: Optional[str] = None) -> Dict[str, Any]:
+    async def recommendation(
+        self,
+        fecha_solicitada: Optional[str] = None,
+        hora_solicitada: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Genera recomendaciones de horarios disponibles.
-        Si fecha_solicitada es hoy o mañana (o no se pasa), usa SUGERIR_HORARIOS (hoy/mañana).
-        Si fecha_solicitada es otro día, devuelve solo el horario de atención de ese día (sin slots sugeridos).
+        Si el cliente dio fecha Y hora concretas, primero consulta CONSULTAR_DISPONIBILIDAD para ese slot.
+        Si solo fecha (o hoy/mañana sin hora), usa SUGERIR_HORARIOS o horario del día.
         
         Args:
             fecha_solicitada: Fecha en YYYY-MM-DD que el cliente está consultando. Opcional.
+            hora_solicitada: Hora en HH:MM AM/PM que el cliente indicó. Opcional. Si viene con fecha, se consulta disponibilidad exacta.
         
         Returns:
             Dict con "text" y opcionalmente "recommendations", "total", "message"
@@ -453,6 +458,22 @@ class ScheduleValidator:
         now_peru = datetime.now(_ZONA_PERU)
         hoy_iso = now_peru.strftime("%Y-%m-%d")
         manana_iso = (now_peru + timedelta(days=1)).strftime("%Y-%m-%d")
+
+        # Si el cliente indicó fecha Y hora concretas, consultar disponibilidad exacta (CONSULTAR_DISPONIBILIDAD) primero
+        if fecha_solicitada and hora_solicitada and hora_solicitada.strip():
+            try:
+                availability = await self._check_availability(fecha_solicitada.strip(), hora_solicitada.strip())
+                if availability.get("available"):
+                    return {
+                        "text": f"El {fecha_solicitada} a las {hora_solicitada.strip()} está disponible. ¿Confirmamos la reserva?"
+                    }
+                error_msg = availability.get("error") or "Ese horario no está disponible."
+                return {
+                    "text": f"{error_msg} ¿Te gustaría que te sugiera otros horarios?"
+                }
+            except Exception as e:
+                logger.warning("[RECOMMENDATION] Error al consultar disponibilidad para slot concreto: %s", e)
+                # Sigue con flujo normal (SUGERIR_HORARIOS)
 
         # Si el cliente preguntó por una fecha que NO es hoy ni mañana, no usar SUGERIR_HORARIOS
         # (solo devuelve hoy/mañana). Mostrar solo horario de atención de ese día.

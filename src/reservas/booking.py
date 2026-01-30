@@ -72,7 +72,7 @@ async def confirm_booking(
         id_empresa: ID de la empresa
         id_prospecto: ID del prospecto/cliente
         nombre_completo: Nombre completo del cliente
-        correo_o_telefono: Correo electrónico o teléfono del cliente
+        correo_o_telefono: Teléfono del cliente (9 dígitos)
         fecha: Fecha en formato YYYY-MM-DD
         hora: Hora en formato HH:MM AM/PM
         servicio: Servicio/motivo de la reserva (usado en titulo/descripción)
@@ -82,7 +82,7 @@ async def confirm_booking(
         sucursal: (Opcional) Sucursal donde se realiza la reserva
 
     Returns:
-        Dict con: success, codigo, message, error
+        Dict con: success, message, error
     """
     record_booking_attempt()
 
@@ -131,30 +131,21 @@ async def confirm_booking(
         logger.debug(f"[BOOKING] Respuesta API: {data}")
         
         if data.get("success"):
-            codigo = data.get("codigo_cita")
-            if codigo:
-                logger.info(f"[BOOKING] Reserva exitosa - Código: {codigo}")
-                message = f"Reserva confirmada exitosamente. Código: {codigo}"
-            else:
-                logger.warning(f"[BOOKING] Reserva exitosa pero sin código de confirmación")
-                message = "Reserva confirmada exitosamente"
+            message = data.get("message") or "Reserva confirmada exitosamente"
+            logger.info(f"[BOOKING] Reserva exitosa - {message}")
             record_booking_success()
-            
             return {
                 "success": True,
-                "codigo": codigo,
                 "message": message,
                 "error": None
             }
         else:
-            error_msg = data.get("message", "Error desconocido")
+            error_msg = data.get("message") or data.get("error") or "Error desconocido"
             logger.warning(f"[BOOKING] Reserva fallida: {error_msg}")
             record_booking_failure("api_error")
-            
             return {
                 "success": False,
-                "codigo": None,
-                "message": "No se pudo confirmar la reserva",
+                "message": error_msg,
                 "error": error_msg
             }
     
@@ -163,7 +154,6 @@ async def confirm_booking(
         record_booking_failure("timeout")
         return {
             "success": False,
-            "codigo": None,
             "message": "La conexión tardó demasiado tiempo",
             "error": "timeout"
         }
@@ -173,7 +163,6 @@ async def confirm_booking(
         record_booking_failure(f"http_{e.response.status_code}")
         return {
             "success": False,
-            "codigo": None,
             "message": f"Error del servidor ({e.response.status_code})",
             "error": str(e)
         }
@@ -183,7 +172,6 @@ async def confirm_booking(
         record_booking_failure("connection_error")
         return {
             "success": False,
-            "codigo": None,
             "message": "Error al conectar con el servidor",
             "error": str(e)
         }
@@ -193,7 +181,6 @@ async def confirm_booking(
         record_booking_failure("unknown_error")
         return {
             "success": False,
-            "codigo": None,
             "message": "Error inesperado al confirmar la reserva",
             "error": str(e)
         }

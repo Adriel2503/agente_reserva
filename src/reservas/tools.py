@@ -29,17 +29,23 @@ logger = get_logger(__name__)
 async def check_availability(
     service: str,
     date: str,
+    time: Optional[str] = None,
     runtime: ToolRuntime = None
 ) -> str:
     """
-    Consulta horarios disponibles para un servicio y fecha específicos.
+    Consulta horarios disponibles para un servicio y fecha (y opcionalmente hora).
     
     Usa esta herramienta cuando el cliente pregunte por disponibilidad
     o cuando necesites verificar si una fecha/hora específica está libre.
     
+    Si el cliente indicó una hora concreta (ej. "a las 2pm", "a las 14:00"), pásala en time
+    para consultar disponibilidad exacta de ese slot (se usa CONSULTAR_DISPONIBILIDAD).
+    Si no pasas time, se devuelven sugerencias para hoy/mañana (SUGERIR_HORARIOS).
+    
     Args:
         service: Nombre del servicio (ej: "corte", "manicure", "consulta")
         date: Fecha en formato ISO (YYYY-MM-DD)
+        time: Hora opcional en formato HH:MM AM/PM (ej. "2:00 PM") o 24h. Si el cliente dijo una hora concreta, pásala aquí.
         runtime: Runtime context automático (inyectado por LangChain)
     
     Returns:
@@ -48,8 +54,10 @@ async def check_availability(
     Examples:
         >>> await check_availability("corte", "2026-01-27")
         "Horarios sugeridos: Lunes 27/01 - 09:00 AM, 10:00 AM, 02:00 PM..."
+        >>> await check_availability("espacio para jugar", "2026-01-31", "2:00 PM")
+        "El 2026-01-31 a las 2:00 PM está disponible. ¿Confirmamos la reserva?"
     """
-    logger.info(f"[TOOL] check_availability - Servicio: {service}, Fecha: {date}")
+    logger.info(f"[TOOL] check_availability - Servicio: {service}, Fecha: {date}, Hora: {time or 'no indicada'}")
     
     # Obtener configuración del runtime context
     ctx = runtime.context if runtime else None
@@ -71,8 +79,11 @@ async def check_availability(
                 agendar_sucursal=agendar_sucursal
             )
             
-            # Obtener recomendaciones (pasa la fecha: si es hoy/mañana usa SUGERIR_HORARIOS; si no, horario de ese día)
-            recommendations = await validator.recommendation(fecha_solicitada=date)
+            # Obtener recomendaciones. Si viene time, se consulta CONSULTAR_DISPONIBILIDAD para ese slot primero.
+            recommendations = await validator.recommendation(
+                fecha_solicitada=date,
+                hora_solicitada=time.strip() if time and time.strip() else None,
+            )
             
             if recommendations and recommendations.get("text"):
                 logger.info(f"[TOOL] check_availability - Recomendaciones obtenidas")
@@ -105,7 +116,7 @@ async def create_booking(
     - Fecha (formato YYYY-MM-DD)
     - Hora (formato HH:MM AM/PM)
     - Nombre del cliente
-    - Contacto (teléfono o email)
+    - Teléfono del cliente
     - Sucursal: si hay una sola en la lista, pásala; si hay varias, usa la que el cliente eligió (nombre exacto de la lista).
     
     La herramienta validará el horario y creará la reserva en el sistema real.
@@ -115,7 +126,7 @@ async def create_booking(
         date: Fecha de la reserva (YYYY-MM-DD)
         time: Hora de la reserva (HH:MM AM/PM)
         customer_name: Nombre completo del cliente
-        customer_contact: Teléfono (9XXXXXXXX) o email del cliente
+        customer_contact: Teléfono del cliente (9 dígitos, ej. 987654321)
         sucursal: Nombre de la sucursal (exactamente como en la lista inyectada). Una sola sucursal: úsala; varias: la que el cliente eligió.
         runtime: Runtime context automático (inyectado por LangChain)
     
@@ -192,22 +203,21 @@ async def create_booking(
             logger.debug(f"[TOOL] create_booking - Resultado: {booking_result}")
             
             if booking_result["success"]:
-                # Reserva exitosa con código real
-                logger.info(f"[TOOL] create_booking - Éxito - Código: {booking_result['codigo']}")
-                return f"""Reserva confirmada exitosamente
+                api_message = booking_result.get("message") or "Reserva confirmada exitosamente"
+                logger.info(f"[TOOL] create_booking - Éxito")
+                return f"""{api_message}
 
 **Detalles:**
 • Servicio: {service}
 • Fecha: {date}
 • Hora: {time}
 • Nombre: {customer_name}
-• **Código: {booking_result['codigo']}**
 
-Guarda este código para futuras consultas. ¡Te esperamos!"""
+¡Te esperamos!"""
             else:
-                # Error al confirmar en el endpoint
-                logger.warning(f"[TOOL] create_booking - Fallo: {booking_result['error']}")
-                return f"No se pudo confirmar la reserva: {booking_result['error']}\n\nPor favor intenta nuevamente."
+                error_msg = booking_result.get("error") or booking_result.get("message") or "No se pudo confirmar la reserva"
+                logger.warning(f"[TOOL] create_booking - Fallo: {error_msg}")
+                return f"{error_msg}\n\nPor favor intenta nuevamente."
     
     except Exception as e:
         logger.error(f"[TOOL] create_booking - Error inesperado: {e}", exc_info=True)

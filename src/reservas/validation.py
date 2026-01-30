@@ -1,6 +1,6 @@
 """
 Validadores de datos para el agente de reservas.
-Valida formato de email, teléfono, fechas, etc.
+Valida formato de teléfono, fechas, etc. Solo se acepta teléfono (no email).
 """
 
 import re
@@ -10,27 +10,28 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ContactInfo(BaseModel):
-    """Valida información de contacto (email o teléfono)."""
+    """Valida información de contacto (solo teléfono peruano)."""
     
-    contact: str = Field(..., description="Email o teléfono del cliente")
+    contact: str = Field(..., description="Teléfono del cliente")
     
     @field_validator('contact')
     @classmethod
     def validate_contact(cls, v: str) -> str:
         """
-        Valida que sea un email válido o un teléfono peruano válido.
+        Valida que sea un teléfono peruano válido. No se acepta email.
         
         Formatos aceptados:
-        - Email: usuario@dominio.com
         - Teléfono: 9XXXXXXXX (9 dígitos comenzando con 9)
         - Teléfono con código: +51 9XXXXXXXX o 51 9XXXXXXXX
         """
         v = v.strip()
         
-        # Validar email
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if re.match(email_pattern, v):
-            return v.lower()
+        # Rechazar email explícitamente
+        if '@' in v:
+            raise ValueError(
+                'Solo se acepta teléfono (9XXXXXXXX). No se acepta email. '
+                f'Recibido: {v}'
+            )
         
         # Limpiar teléfono (remover espacios, guiones, paréntesis)
         phone = re.sub(r'[\s\-\(\)]', '', v)
@@ -44,19 +45,14 @@ class ContactInfo(BaseModel):
             return phone
         
         raise ValueError(
-            'Contacto debe ser un email válido o un teléfono peruano válido (9XXXXXXXX). '
+            'Contacto debe ser un teléfono peruano válido (9XXXXXXXX). '
             f'Recibido: {v}'
         )
     
     @property
-    def is_email(self) -> bool:
-        """Retorna True si el contacto es un email."""
-        return '@' in self.contact
-    
-    @property
     def is_phone(self) -> bool:
-        """Retorna True si el contacto es un teléfono."""
-        return not self.is_email
+        """Retorna True (siempre, ya que solo aceptamos teléfono)."""
+        return True
 
 
 class CustomerName(BaseModel):
@@ -136,7 +132,7 @@ class BookingData(BaseModel):
     date: str = Field(..., description="Fecha de la reserva")
     time: str = Field(..., description="Hora de la reserva")
     customer_name: str = Field(..., description="Nombre del cliente")
-    customer_contact: str = Field(..., description="Email o teléfono del cliente")
+    customer_contact: str = Field(..., description="Teléfono del cliente")
     
     @field_validator('service')
     @classmethod

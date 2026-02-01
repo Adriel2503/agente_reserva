@@ -54,7 +54,7 @@ def _build_fecha_inicio_fin(fecha: str, hora: str, duracion_minutos: int) -> tup
 
 async def confirm_booking(
     id_empresa: int,
-    id_prospecto: str,
+    id_prospecto: int,
     nombre_completo: str,
     correo_o_telefono: str,
     fecha: str,
@@ -70,7 +70,7 @@ async def confirm_booking(
 
     Args:
         id_empresa: ID de la empresa
-        id_prospecto: ID del prospecto/cliente
+        id_prospecto: ID del prospecto/cliente (int, unificado con session_id)
         nombre_completo: Nombre completo del cliente
         correo_o_telefono: Teléfono del cliente (9 dígitos)
         fecha: Fecha en formato YYYY-MM-DD

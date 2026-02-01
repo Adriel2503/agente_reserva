@@ -64,7 +64,7 @@ async def check_availability(
     id_empresa = ctx.id_empresa if ctx else 1
     duracion_cita_minutos = ctx.duracion_cita_minutos if ctx else 60
     slots = ctx.slots if ctx else 60
-    id_usuario = ctx.id_usuario if ctx else 1
+    agendar_usuario = ctx.agendar_usuario if ctx else 1
     agendar_sucursal = ctx.agendar_sucursal if ctx else 0
 
     try:
@@ -75,7 +75,7 @@ async def check_availability(
                 duracion_cita_minutos=duracion_cita_minutos,
                 slots=slots,
                 es_reservacion=True,
-                agendar_usuario=id_usuario,
+                agendar_usuario=agendar_usuario,
                 agendar_sucursal=agendar_sucursal
             )
             
@@ -144,9 +144,9 @@ async def create_booking(
     id_empresa = ctx.id_empresa if ctx else 1
     duracion_cita_minutos = ctx.duracion_cita_minutos if ctx else 60
     slots = ctx.slots if ctx else 60
-    id_usuario = ctx.id_usuario if ctx else 1
+    agendar_usuario = ctx.agendar_usuario if ctx else 1
     agendar_sucursal = ctx.agendar_sucursal if ctx else 0
-    id_prospecto = ctx.id_prospecto if ctx else ""
+    id_prospecto = ctx.id_prospecto if ctx else 0
 
     try:
         with track_tool_execution("create_booking"):
@@ -171,7 +171,7 @@ async def create_booking(
                 duracion_cita_minutos=duracion_cita_minutos,
                 slots=slots,
                 es_reservacion=True,
-                agendar_usuario=id_usuario,
+                agendar_usuario=agendar_usuario,
                 agendar_sucursal=agendar_sucursal
             )
             
@@ -185,7 +185,7 @@ async def create_booking(
             
             # 3. CONFIRMAR booking en endpoint real (payload doc: titulo, fecha_inicio, fecha_fin, agendar_*)
             logger.debug("[TOOL] create_booking - Confirmando en API")
-            id_prospecto_val = id_prospecto or (str(ctx.session_id) if ctx else "")
+            id_prospecto_val = id_prospecto or (ctx.session_id if ctx else 0)
             booking_result = await confirm_booking(
                 id_empresa=id_empresa,
                 id_prospecto=id_prospecto_val,
@@ -194,7 +194,7 @@ async def create_booking(
                 fecha=date,
                 hora=time,
                 servicio=service,
-                agendar_usuario=id_usuario,
+                agendar_usuario=agendar_usuario,
                 agendar_sucursal=agendar_sucursal,
                 duracion_cita_minutos=duracion_cita_minutos,
                 sucursal=sucursal.strip() if sucursal and sucursal.strip() else None,

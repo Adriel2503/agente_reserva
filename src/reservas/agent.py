@@ -39,10 +39,10 @@ class AgentContext:
     id_empresa: int
     duracion_cita_minutos: int = 60
     slots: int = 60
-    id_usuario: int = 1
+    agendar_usuario: int = 1
     agendar_sucursal: int = 0
-    id_prospecto: str = ""
-    session_id: str = ""
+    id_prospecto: int = 0  # mismo valor que session_id (int, unificado con orquestador)
+    session_id: int = 0
 
 
 def _validate_context(context: Dict[str, Any]) -> None:
@@ -109,7 +109,7 @@ def _get_agent(config: Dict[str, Any]):
     return agent
 
 
-def _prepare_agent_context(context: Dict[str, Any], session_id: str) -> AgentContext:
+def _prepare_agent_context(context: Dict[str, Any], session_id: int) -> AgentContext:
     """
     Prepara el contexto runtime para inyectar a las tools del agente.
     
@@ -118,7 +118,7 @@ def _prepare_agent_context(context: Dict[str, Any], session_id: str) -> AgentCon
     
     Args:
         context: Contexto del orquestador
-        session_id: ID de sesión
+        session_id: ID de sesión (int, unificado con orquestador)
     
     Returns:
         AgentContext configurado
@@ -142,9 +142,9 @@ def _prepare_agent_context(context: Dict[str, Any], session_id: str) -> AgentCon
     if "agendar_usuario" in config_data and config_data["agendar_usuario"] is not None:
         agendar_usuario = config_data["agendar_usuario"]
         if isinstance(agendar_usuario, bool):
-            context_params["id_usuario"] = 1 if agendar_usuario else 0
+            context_params["agendar_usuario"] = 1 if agendar_usuario else 0
         elif isinstance(agendar_usuario, int):
-            context_params["id_usuario"] = agendar_usuario
+            context_params["agendar_usuario"] = agendar_usuario
 
     # agendar_sucursal: bool o int → int
     if "agendar_sucursal" in config_data and config_data["agendar_sucursal"] is not None:
@@ -154,15 +154,15 @@ def _prepare_agent_context(context: Dict[str, Any], session_id: str) -> AgentCon
         elif isinstance(agendar_sucursal, int):
             context_params["agendar_sucursal"] = agendar_sucursal
 
-    # id_prospecto: solo session_id (el orquestador ya no envía id_prospecto en config)
-    context_params["id_prospecto"] = str(session_id)
+    # id_prospecto: mismo valor que session_id (int, para API)
+    context_params["id_prospecto"] = session_id
 
     return AgentContext(**context_params)
 
 
 async def process_reserva_message(
     message: str,
-    session_id: str,
+    session_id: int,
     context: Dict[str, Any]
 ) -> str:
     """
@@ -176,7 +176,7 @@ async def process_reserva_message(
     
     Args:
         message: Mensaje del cliente
-        session_id: ID de sesión para tracking y memoria
+        session_id: ID de sesión (int, unificado con orquestador)
         context: Contexto adicional (config del bot, id_empresa, etc.)
     
     Returns:
@@ -186,11 +186,11 @@ async def process_reserva_message(
     if not message or not message.strip():
         return "No recibí tu mensaje. ¿Podrías repetirlo?"
     
-    if not session_id:
-        raise ValueError("session_id es requerido")
+    if session_id is None or session_id < 0:
+        raise ValueError("session_id es requerido (int no negativo)")
     
-    # Registrar request
-    chat_requests_total.labels(session_id=session_id).inc()
+    # Registrar request (Prometheus labels suelen ser str)
+    chat_requests_total.labels(session_id=str(session_id)).inc()
     
     # Validar contexto
     try:
@@ -217,7 +217,7 @@ async def process_reserva_message(
     
     config = {
         "configurable": {
-            "thread_id": session_id
+            "thread_id": str(session_id)  # checkpointer suele esperar str
         }
     }
     try:

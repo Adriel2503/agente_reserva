@@ -43,7 +43,7 @@ mcp = FastMCP(
 @mcp.tool()
 async def chat(
     message: str,
-    session_id: str,
+    session_id: int,
     context: Dict[str, Any] | None = None
 ) -> str:
     """
@@ -60,7 +60,7 @@ async def chat(
     
     Args:
         message: Mensaje del cliente que quiere reservar
-        session_id: ID de sesión único para tracking y memoria
+        session_id: ID de sesión (int, unificado con orquestador)
         context: Contexto adicional requerido:
             - config.id_empresa (int, requerido): ID de la empresa
             - config.agendar_usuario (bool o int, opcional): 1=agendar por usuario, 0=no (default: 1)
@@ -79,7 +79,7 @@ async def chat(
         ...         "personalidad": "amable y profesional"
         ...     }
         ... }
-        >>> await chat("Quiero reservar un turno", "session-123", context)
+        >>> await chat("Quiero reservar un turno", 3671, context)
         "¡Perfecto! ¿Para qué servicio deseas reservar?"
     """
     if context is None:

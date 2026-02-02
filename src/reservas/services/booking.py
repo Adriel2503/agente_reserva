@@ -12,17 +12,15 @@ import httpx
 from typing import Any, Dict, Optional
 
 try:
-    from .logger import get_logger
-    from .metrics import track_api_call, record_booking_attempt, record_booking_success, record_booking_failure
-    from . import config as app_config
+    from ..logger import get_logger
+    from ..metrics import track_api_call, record_booking_attempt, record_booking_success, record_booking_failure
+    from ..config import config as app_config
 except ImportError:
-    from logger import get_logger
-    from metrics import track_api_call, record_booking_attempt, record_booking_success, record_booking_failure
-    import config as app_config
+    from reservas.logger import get_logger
+    from reservas.metrics import track_api_call, record_booking_attempt, record_booking_success, record_booking_failure
+    from reservas.config import config as app_config
 
 logger = get_logger(__name__)
-
-AGENDAR_REUNIONES_ENDPOINT = "https://api.maravia.pe/servicio/n8n/ws_agendar_reunion.php"
 
 
 def _parse_time_to_24h(hora: str) -> str:
@@ -121,7 +119,7 @@ async def confirm_booking(
         with track_api_call("agendar_reunion"):
             async with httpx.AsyncClient(timeout=app_config.API_TIMEOUT) as client:
                 response = await client.post(
-                    AGENDAR_REUNIONES_ENDPOINT,
+                    app_config.API_AGENDAR_REUNION_URL,
                     json=payload,
                     headers={"Content-Type": "application/json"}
                 )

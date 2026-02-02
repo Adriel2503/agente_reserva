@@ -11,19 +11,18 @@ from langchain.chat_models import init_chat_model
 from langgraph.checkpoint.memory import InMemorySaver
 
 try:
-    from . import config as app_config
-    from .models import ReservaConfig
-    from .tools import AGENT_TOOLS
-    from .logger import get_logger
-    from .metrics import track_chat_response, track_llm_call, record_chat_error, chat_requests_total
-    from .prompts import build_reserva_system_prompt
+    from ..config import config as app_config
+    from ..config import ReservaConfig
+    from ..tools import AGENT_TOOLS
+    from ..logger import get_logger
+    from ..metrics import track_chat_response, track_llm_call, record_chat_error, chat_requests_total
+    from ..prompts import build_reserva_system_prompt
 except ImportError:
-    import config as app_config
-    from models import ReservaConfig
-    from tools import AGENT_TOOLS
-    from logger import get_logger
-    from metrics import track_chat_response, track_llm_call, record_chat_error, chat_requests_total
-    from prompts import build_reserva_system_prompt
+    from reservas.config import config as app_config, ReservaConfig
+    from reservas.tools import AGENT_TOOLS
+    from reservas.logger import get_logger
+    from reservas.metrics import track_chat_response, track_llm_call, record_chat_error, chat_requests_total
+    from reservas.prompts import build_reserva_system_prompt
 
 logger = get_logger(__name__)
 
@@ -84,7 +83,7 @@ def _get_agent(config: Dict[str, Any]):
     model = init_chat_model(
         f"openai:{app_config.OPENAI_MODEL}",
         api_key=app_config.OPENAI_API_KEY,
-        temperature=0.4,  
+        temperature=app_config.OPENAI_TEMPERATURE,
         max_tokens=app_config.MAX_TOKENS,
         timeout=app_config.OPENAI_TIMEOUT,
     )

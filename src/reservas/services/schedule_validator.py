@@ -11,19 +11,15 @@ from typing import Any, Dict, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 try:
-    from .logger import get_logger
-    from .metrics import track_api_call, update_cache_stats
-    from . import config as app_config
+    from ..logger import get_logger
+    from ..metrics import track_api_call, update_cache_stats
+    from ..config import config as app_config
 except ImportError:
-    from logger import get_logger
-    from metrics import track_api_call, update_cache_stats
-    import config as app_config
+    from reservas.logger import get_logger
+    from reservas.metrics import track_api_call, update_cache_stats
+    from reservas.config import config as app_config
 
 logger = get_logger(__name__)
-
-# Endpoints
-AGENDAR_REUNIONES_ENDPOINT = "https://api.maravia.pe/servicio/n8n/ws_agendar_reunion.php"
-INFORMATION_ENDPOINT = "https://api.maravia.pe/servicio/ws_informacion_ia.php"
 
 # Mapeo de día de la semana a campo de la base de datos
 DAY_MAPPING = {
@@ -47,7 +43,7 @@ DIAS_ESPANOL = {
     "Sunday": "Domingo"
 }
 
-_ZONA_PERU = ZoneInfo("America/Lima")
+_ZONA_PERU = ZoneInfo(getattr(app_config, "TIMEZONE", "America/Lima"))
 _DIAS_NOMBRE = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
 # ========== CACHE GLOBAL CON TTL ==========
@@ -150,7 +146,7 @@ class ScheduleValidator:
             with track_api_call("obtener_horario"):
                 async with httpx.AsyncClient(timeout=app_config.API_TIMEOUT) as client:
                     response = await client.post(
-                        INFORMATION_ENDPOINT,
+                        app_config.API_INFORMACION_URL,
                         json=payload_horario,
                         headers={"Content-Type": "application/json"}
                     )
@@ -315,7 +311,7 @@ class ScheduleValidator:
             with track_api_call("consultar_disponibilidad"):
                 async with httpx.AsyncClient(timeout=app_config.API_TIMEOUT) as client:
                     response = await client.post(
-                        AGENDAR_REUNIONES_ENDPOINT,
+                        app_config.API_AGENDAR_REUNION_URL,
                         json=payload,
                         headers={"Content-Type": "application/json"}
                     )
@@ -516,7 +512,7 @@ class ScheduleValidator:
             with track_api_call("sugerir_horarios"):
                 async with httpx.AsyncClient(timeout=app_config.API_TIMEOUT) as client:
                     response = await client.post(
-                        AGENDAR_REUNIONES_ENDPOINT,
+                        app_config.API_AGENDAR_REUNION_URL,
                         json=payload,
                         headers={"Content-Type": "application/json"},
                     )

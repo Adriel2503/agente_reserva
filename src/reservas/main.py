@@ -11,15 +11,15 @@ from fastmcp import FastMCP
 from prometheus_client import make_asgi_app
 
 try:
-    from . import config as app_config
+    from .config import config as app_config
     from .agent import process_reserva_message
     from .logger import setup_logging, get_logger
     from .metrics import initialize_agent_info
 except ImportError:
-    import config as app_config
-    from agent import process_reserva_message
-    from logger import setup_logging, get_logger
-    from metrics import initialize_agent_info
+    from reservas.config import config as app_config
+    from reservas.agent import process_reserva_message
+    from reservas.logger import setup_logging, get_logger
+    from reservas.metrics import initialize_agent_info
 
 # Configurar logging antes de cualquier otra cosa
 log_level = getattr(logging, app_config.LOG_LEVEL.upper(), logging.INFO)

@@ -10,17 +10,17 @@ from typing import Any, Dict, Optional
 from langchain.tools import tool, ToolRuntime
 
 try:
-    from .schedule_validator import ScheduleValidator
-    from .booking import confirm_booking
-    from .logger import get_logger
-    from .metrics import track_tool_execution
-    from .validation import validate_booking_data
+    from ..services.schedule_validator import ScheduleValidator
+    from ..services.booking import confirm_booking
+    from ..logger import get_logger
+    from ..metrics import track_tool_execution
+    from ..validation import validate_booking_data
 except ImportError:
-    from schedule_validator import ScheduleValidator
-    from booking import confirm_booking
-    from logger import get_logger
-    from metrics import track_tool_execution
-    from validation import validate_booking_data
+    from reservas.services.schedule_validator import ScheduleValidator
+    from reservas.services.booking import confirm_booking
+    from reservas.logger import get_logger
+    from reservas.metrics import track_tool_execution
+    from reservas.validation import validate_booking_data
 
 logger = get_logger(__name__)
 

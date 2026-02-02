@@ -11,7 +11,10 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-INFORMATION_ENDPOINT = "https://api.maravia.pe/servicio/ws_informacion_ia.php"
+try:
+    from ..config import config as app_config
+except ImportError:
+    from reservas.config import config as app_config
 
 _DIAS = [
     ("Lunes", "horario_lunes"),
@@ -81,9 +84,9 @@ def fetch_sucursales_publicas(id_empresa: Optional[Any]) -> str:
     print("[SUCURSALES] JSON enviado a ws_informacion_ia.php (OBTENER_SUCURSALES_PUBLICAS):", json.dumps(payload_sucursales, ensure_ascii=False, indent=2))
     try:
         response = requests.post(
-            INFORMATION_ENDPOINT,
+            app_config.API_INFORMACION_URL,
             json=payload_sucursales,
-            timeout=10,
+            timeout=app_config.API_TIMEOUT,
             headers={"Content-Type": "application/json", "Accept": "application/json"},
         )
         response.raise_for_status()

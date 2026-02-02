@@ -9,10 +9,15 @@ from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from ..sucursales import fetch_sucursales_publicas
+try:
+    from ..config import config as _app_config
+except ImportError:
+    from reservas.config import config as _app_config
+
+from ..services.sucursales import fetch_sucursales_publicas
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent
-_ZONA_PERU = ZoneInfo("America/Lima")
+_ZONA_PERU = ZoneInfo(getattr(_app_config, "TIMEZONE", "America/Lima"))
 
 _DEFAULTS: Dict[str, Any] = {
     "personalidad": "amable, profesional y eficiente",

@@ -111,7 +111,7 @@ async def confirm_booking(
             "sucursal": (sucursal.strip() if sucursal and sucursal.strip() else "") or "No hay sucursal registrada",
         }
         
-        logger.info(f"[BOOKING] Confirmando reserva: {servicio} - {fecha} {hora} - {nombre_completo}")
+        logger.debug(f"[BOOKING] Confirmando reserva: {servicio} - {fecha} {hora} - {nombre_completo}")
         logger.debug(f"[BOOKING] Payload: {payload}")
         # Print para ver en consola exactamente qué JSON se envía al agendar reserva
         print("[BOOKING] JSON enviado a ws_agendar_reunion.php (AGENDAR_REUNION):", json.dumps(payload, ensure_ascii=False, indent=2))

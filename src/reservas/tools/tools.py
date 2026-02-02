@@ -57,7 +57,7 @@ async def check_availability(
         >>> await check_availability("espacio para jugar", "2026-01-31", "2:00 PM")
         "El 2026-01-31 a las 2:00 PM está disponible. ¿Confirmamos la reserva?"
     """
-    logger.info(f"[TOOL] check_availability - Servicio: {service}, Fecha: {date}, Hora: {time or 'no indicada'}")
+    logger.debug(f"[TOOL] check_availability - Servicio: {service}, Fecha: {date}, Hora: {time or 'no indicada'}")
     
     # Obtener configuración del runtime context
     ctx = runtime.context if runtime else None
@@ -86,7 +86,7 @@ async def check_availability(
             )
             
             if recommendations and recommendations.get("text"):
-                logger.info(f"[TOOL] check_availability - Recomendaciones obtenidas")
+                logger.debug(f"[TOOL] check_availability - Recomendaciones obtenidas")
                 return recommendations["text"]
             else:
                 logger.warning(f"[TOOL] check_availability - Sin recomendaciones, usando fallback")
@@ -137,7 +137,7 @@ async def create_booking(
         >>> await create_booking("Corte", "2026-01-27", "02:00 PM", "Juan Pérez", "987654321", "Miraflores")
         "Reserva confirmada exitosamente. Código: RES-12345"
     """
-    logger.info(f"[TOOL] create_booking - {service} | {date} {time} | {customer_name}")
+    logger.debug(f"[TOOL] create_booking - {service} | {date} {time} | {customer_name}")
     
     # Obtener configuración del runtime context
     ctx = runtime.context if runtime else None

@@ -96,7 +96,7 @@ def _clear_cache():
     with _CACHE_LOCK:
         _SCHEDULE_CACHE.clear()
         update_cache_stats('schedule', 0)
-        logger.info("[CACHE] Cache limpiado")
+        logger.debug("[CACHE] Cache limpiado")
 
 
 # ========== VALIDADOR DE HORARIOS ==========
@@ -136,7 +136,7 @@ class ScheduleValidator:
             return cached
 
         # No está en cache, hacer fetch
-        logger.info(f"[SCHEDULE] Fetching horario para empresa {self.id_empresa}")
+        logger.debug(f"[SCHEDULE] Fetching horario para empresa {self.id_empresa}")
         payload_horario = {
             "codOpe": "OBTENER_HORARIO_REUNIONES",
             "id_empresa": self.id_empresa
@@ -156,7 +156,7 @@ class ScheduleValidator:
             if data.get("success") and data.get("horario_reuniones"):
                 schedule = data["horario_reuniones"]
                 _set_cached_schedule(self.id_empresa, schedule)
-                logger.info(f"[SCHEDULE] Horario obtenido y cacheado para empresa {self.id_empresa}")
+                logger.debug(f"[SCHEDULE] Horario obtenido y cacheado para empresa {self.id_empresa}")
                 return schedule
 
             logger.warning(f"[SCHEDULE] Respuesta sin horario: {data}")
@@ -431,7 +431,7 @@ class ScheduleValidator:
         if not availability["available"]:
             return {"valid": False, "error": availability["error"]}
 
-        logger.info(f"[VALIDATION] ✅ Horario válido: {fecha_str} {hora_str}")
+        logger.debug(f"[VALIDATION] ✅ Horario válido: {fecha_str} {hora_str}")
         return {"valid": True, "error": None}
 
     async def recommendation(

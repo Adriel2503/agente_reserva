@@ -77,7 +77,7 @@ def _get_agent(config: Dict[str, Any]):
     Returns:
         Agente configurado con tools y checkpointer
     """
-    logger.info(f"[AGENT] Creando agente con LangChain 1.2+ API")
+    logger.debug(f"[AGENT] Creando agente con LangChain 1.2+ API")
     
     # Inicializar modelo
     model = init_chat_model(
@@ -103,7 +103,7 @@ def _get_agent(config: Dict[str, Any]):
         checkpointer=_checkpointer
     )
     
-    logger.info(f"[AGENT] Agente creado - Tools: {len(AGENT_TOOLS)}, Checkpointer: InMemorySaver")
+    logger.debug(f"[AGENT] Agente creado - Tools: {len(AGENT_TOOLS)}, Checkpointer: InMemorySaver")
     
     return agent
 
@@ -220,7 +220,7 @@ async def process_reserva_message(
         }
     }
     try:
-        logger.info(f"[AGENT] Invocando agent - Session: {session_id}, Message: {message[:100]}...")
+        logger.debug(f"[AGENT] Invocando agent - Session: {session_id}, Message: {message[:100]}...")
         
         with track_chat_response():
             with track_llm_call():
@@ -241,7 +241,7 @@ async def process_reserva_message(
         else:
             response_text = "Lo siento, no pude procesar tu solicitud."
         
-        logger.info(f"[AGENT] Respuesta generada: {response_text[:200]}...")
+        logger.debug(f"[AGENT] Respuesta generada: {response_text[:200]}...")
     
     except Exception as e:
         logger.error(f"[AGENT] Error al ejecutar agent: {e}", exc_info=True)

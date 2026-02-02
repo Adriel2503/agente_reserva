@@ -84,10 +84,12 @@ El agente se comunica mediante el protocolo MCP (Model Context Protocol). Expone
 
 **Parámetros:**
 - `message` (string): Mensaje del usuario
-- `session_id` (string): ID único de sesión para memoria
+- `session_id` (integer): ID único de sesión para memoria (int, no string)
 - `context` (object): Configuración del agente
   - `context.config.id_empresa` (int, **requerido**): ID de la empresa
   - `context.config.personalidad` (string, opcional): Personalidad del agente
+  - `context.config.agendar_usuario` (bool/int, opcional): Usuario que agenda (default: 1)
+  - `context.config.agendar_sucursal` (bool/int, opcional): Agendar por sucursal (default: 0)
   - Otros parámetros opcionales (ver [API.md](docs/API.md))
 
 **Ejemplo de request:**
@@ -96,11 +98,13 @@ El agente se comunica mediante el protocolo MCP (Model Context Protocol). Expone
   "tool": "chat",
   "arguments": {
     "message": "Quiero reservar para mañana a las 2pm",
-    "session_id": "user-12345",
+    "session_id": 12345,
     "context": {
       "config": {
         "id_empresa": 123,
-        "personalidad": "amable y profesional"
+        "personalidad": "amable y profesional",
+        "agendar_usuario": 1,
+        "agendar_sucursal": 0
       }
     }
   }
@@ -160,19 +164,28 @@ Ver [ARCHITECTURE.md](docs/ARCHITECTURE.md) para detalles completos.
 
 ```
 agent_reservas/
-├── src/reservas/           # Código fuente
-│   ├── main.py            # Servidor MCP
-│   ├── agent.py           # Lógica del agente LangChain
-│   ├── tools.py           # Herramientas internas
-│   ├── schedule_validator.py  # Validación de horarios
-│   ├── booking.py         # Confirmación de reservas
-│   ├── validation.py      # Validadores Pydantic
-│   ├── logger.py          # Sistema de logging
-│   ├── metrics.py         # Métricas Prometheus
-│   └── prompts/           # Templates de prompts
-├── docs/                  # Documentación
-├── .env.example          # Ejemplo de configuración
-└── requirements.txt      # Dependencias
+├── src/reservas/              # Código fuente
+│   ├── main.py               # Servidor MCP (punto de entrada)
+│   ├── validation.py         # Validadores Pydantic
+│   ├── logger.py             # Sistema de logging
+│   ├── metrics.py            # Métricas Prometheus
+│   ├── agent/                # Lógica del agente
+│   │   └── agent.py          # Agente LangChain con memoria
+│   ├── tools/                # Herramientas del agente
+│   │   └── tools.py          # check_availability, create_booking
+│   ├── services/             # Servicios de negocio
+│   │   ├── booking.py        # Confirmación de reservas (API)
+│   │   ├── schedule_validator.py  # Validación de horarios
+│   │   └── sucursales.py     # Gestión de sucursales
+│   ├── config/               # Configuración
+│   │   ├── config.py         # Variables de entorno
+│   │   └── models.py         # Modelos Pydantic
+│   └── prompts/              # Templates de prompts
+│       ├── __init__.py       # Builder de prompts
+│       └── reserva_system.j2 # Template Jinja2
+├── docs/                     # Documentación
+├── .env.example             # Ejemplo de configuración
+└── requirements.txt         # Dependencias
 ```
 
 ### Ejecutar en modo DEBUG

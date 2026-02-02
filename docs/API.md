@@ -34,14 +34,15 @@ El agente internamente usa dos herramientas propias:
   "tool": "chat",
   "arguments": {
     "message": "Quiero reservar para mañana a las 2pm",
-    "session_id": "user-12345-abc",
+    "session_id": 12345,
     "context": {
       "config": {
         "id_empresa": 123,
         "personalidad": "amable y profesional",
         "duracion_cita_minutos": 60,
         "slots": 60,
-        "agendar_usuario": true
+        "agendar_usuario": 1,
+        "agendar_sucursal": 0
       }
     }
   }
@@ -53,7 +54,7 @@ El agente internamente usa dos herramientas propias:
 | Parámetro | Tipo | Requerido | Default | Descripción |
 |-----------|------|-----------|---------|-------------|
 | `message` | string | ✅ Sí | - | Mensaje del usuario que quiere reservar |
-| `session_id` | string | ✅ Sí | - | ID único de sesión para memoria conversacional |
+| `session_id` | integer | ✅ Sí | - | ID único de sesión para memoria conversacional (int, no string) |
 | `context` | object | ✅ Sí | - | Contexto de configuración |
 
 #### Parámetros de `context.config`
@@ -65,6 +66,7 @@ El agente internamente usa dos herramientas propias:
 | `duracion_cita_minutos` | integer | ❌ No | `60` | Duración de la cita en minutos |
 | `slots` | integer | ❌ No | `60` | Cantidad de slots disponibles |
 | `agendar_usuario` | boolean/integer | ❌ No | `1` | Usuario que agenda (true=1, false=0) |
+| `agendar_sucursal` | boolean/integer | ❌ No | `0` | Agendar por sucursal (true=1, false=0) |
 
 ---
 
@@ -98,7 +100,7 @@ El agente mantiene el contexto de la conversación usando `session_id`, por lo q
   "tool": "chat",
   "arguments": {
     "message": "Hola, quiero reservar",
-    "session_id": "sess-001",
+    "session_id": 1001,
     "context": {
       "config": {
         "id_empresa": 123
@@ -125,7 +127,7 @@ El agente mantiene el contexto de la conversación usando `session_id`, por lo q
   "tool": "chat",
   "arguments": {
     "message": "Necesito corte de cabello para mañana a las 3pm, soy Juan Pérez, mi teléfono es 987654321",
-    "session_id": "sess-002",
+    "session_id": 1002,
     "context": {
       "config": {
         "id_empresa": 123,
@@ -139,7 +141,7 @@ El agente mantiene el contexto de la conversación usando `session_id`, por lo q
 **Response:**
 ```json
 {
-  "result": "Reserva confirmada exitosamente\n\n**Detalles:**\n• Servicio: Corte de cabello\n• Fecha: 2026-01-29\n• Hora: 03:00 PM\n• Nombre: Juan Pérez\n• **Código: RES-12345**\n\nGuarda este código para futuras consultas. ¡Te esperamos!"
+  "result": "Reserva confirmada exitosamente\n\n**Detalles:**\n• Servicio: Corte de cabello\n• Fecha: 2026-01-29\n• Hora: 03:00 PM\n• Nombre: Juan Pérez\n\n¡Te esperamos!"
 }
 ```
 
@@ -153,7 +155,7 @@ El agente mantiene el contexto de la conversación usando `session_id`, por lo q
   "tool": "chat",
   "arguments": {
     "message": "¿Tienen horarios disponibles el viernes?",
-    "session_id": "sess-003",
+    "session_id": 1003,
     "context": {
       "config": {
         "id_empresa": 123
@@ -178,7 +180,7 @@ El agente mantiene el contexto de la conversación usando `session_id`, por lo q
 ```json
 {
   "message": "Quiero reservar",
-  "session_id": "sess-004",
+  "session_id": 1004,
   "context": {"config": {"id_empresa": 123}}
 }
 ```
@@ -192,7 +194,7 @@ El agente mantiene el contexto de la conversación usando `session_id`, por lo q
 ```json
 {
   "message": "Manicure",
-  "session_id": "sess-004",
+  "session_id": 1004,
   "context": {"config": {"id_empresa": 123}}
 }
 ```
@@ -206,7 +208,7 @@ El agente mantiene el contexto de la conversación usando `session_id`, por lo q
 ```json
 {
   "message": "Para el sábado a las 10am",
-  "session_id": "sess-004",
+  "session_id": 1004,
   "context": {"config": {"id_empresa": 123}}
 }
 ```
@@ -322,7 +324,7 @@ Ver todas las métricas disponibles en el endpoint `/metrics`.
    - Horarios disponibles (contra API)
    - Disponibilidad real (slots ocupados)
 
-4. **Código de reserva**: Solo se genera al confirmar con éxito en la API externa. NO es inventado por el LLM.
+4. **Confirmación de reserva**: La API externa confirma la reserva y devuelve un mensaje de éxito. El agente muestra los detalles de la reserva confirmada.
 
 5. **Personalidad configurable**: Se puede ajustar por empresa enviando `context.config.personalidad`.
 
@@ -337,7 +339,7 @@ Ver todas las métricas disponibles en el endpoint `/metrics`.
 ```python
 import httpx
 
-async def reservar(mensaje: str, session_id: str, id_empresa: int):
+async def reservar(mensaje: str, session_id: int, id_empresa: int):
     async with httpx.AsyncClient() as client:
         response = await client.post(
             "http://localhost:8003/tools/call",
@@ -348,7 +350,9 @@ async def reservar(mensaje: str, session_id: str, id_empresa: int):
                     "session_id": session_id,
                     "context": {
                         "config": {
-                            "id_empresa": id_empresa
+                            "id_empresa": id_empresa,
+                            "agendar_usuario": 1,
+                            "agendar_sucursal": 0
                         }
                     }
                 }
@@ -369,10 +373,12 @@ async function reservar(mensaje, sessionId, idEmpresa) {
       tool: 'chat',
       arguments: {
         message: mensaje,
-        session_id: sessionId,
+        session_id: sessionId,  // integer, no string
         context: {
           config: {
-            id_empresa: idEmpresa
+            id_empresa: idEmpresa,
+            agendar_usuario: 1,
+            agendar_sucursal: 0
           }
         }
       }

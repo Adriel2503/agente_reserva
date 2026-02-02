@@ -131,15 +131,19 @@ curl -X POST http://localhost:8003/tools/call \
     "tool": "chat",
     "arguments": {
       "message": "Hola",
-      "session_id": "test-123",
+      "session_id": 123,
       "context": {
         "config": {
-          "id_empresa": 123
+          "id_empresa": 123,
+          "agendar_usuario": 1,
+          "agendar_sucursal": 0
         }
       }
     }
   }'
 ```
+
+**Nota:** `session_id` debe ser un entero (int), no un string.
 
 Debería retornar una respuesta del agente.
 
@@ -199,11 +203,15 @@ scrape_configs:
 {
   "context": {
     "config": {
-      "id_empresa": 123  // ← Asegurarse de enviarlo
+      "id_empresa": 123,
+      "agendar_usuario": 1,
+      "agendar_sucursal": 0
     }
   }
 }
 ```
+
+**Nota:** `session_id` debe ser un entero, no un string.
 
 ### Error: "Connection refused"
 
@@ -300,4 +308,4 @@ python -c "from reservas import __version__; print(__version__)"
 
 - Para entender cómo funciona internamente: [ARCHITECTURE.md](ARCHITECTURE.md)
 - Para usar la API: [API.md](API.md)
-- Para configuración avanzada: Ver [MEJORAS_IMPLEMENTADAS.md](../MEJORAS_IMPLEMENTADAS.md)
+- Para revisión del agente: Ver [REVISION_AGENT_RESERVAS.md](REVISION_AGENT_RESERVAS.md)

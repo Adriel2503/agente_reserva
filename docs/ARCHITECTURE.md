@@ -21,10 +21,11 @@ El **Agent Reservas** es un microservicio de IA conversacional que automatiza la
 ### Información del Proyecto
 
 - **Versión**: 2.0.0
-- **Líneas de código**: ~2,534
+- **Líneas de código**: ~2,800
 - **Lenguaje**: Python 3.10+
 - **Arquitectura**: Microservicio asíncrono con MCP
 - **LLM**: GPT-4o-mini (configurable a GPT-4o)
+- **Zona horaria**: America/Lima
 
 ### Stack Tecnológico
 
@@ -83,7 +84,7 @@ El **Agent Reservas** es un microservicio de IA conversacional que automatiza la
 │                                    │ Invoca                   │
 │                                    ↓                          │
 │  ┌────────────────────────────────────────────────────────┐  │
-│  │  agent.py (Lógica LangChain - 241 líneas)             │  │
+│  │  agent/agent.py (Lógica LangChain - 252 líneas)       │  │
 │  │                                                        │  │
 │  │  process_reserva_message(message, session_id, context) │  │
 │  │         │                                              │  │
@@ -101,7 +102,7 @@ El **Agent Reservas** es un microservicio de IA conversacional que automatiza la
 │                           │ LLM decide tool                  │
 │                           ↓                                  │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │  tools.py (Herramientas Internas - 215 líneas)     │    │
+│  │  tools/tools.py (Herramientas - 234 líneas)        │    │
 │  │                                                     │    │
 │  │  AGENT_TOOLS = [check_availability, create_booking]│    │
 │  └──────────────┬────────────────────┬─────────────────┘    │
@@ -126,7 +127,7 @@ El **Agent Reservas** es un microservicio de IA conversacional que automatiza la
 │  ┌────────────────────┐     ┌───────────────────────┐     │
 │  │schedule_validator  │     │ validation.py         │     │
 │  │    .py             │     │ (Pydantic Models)     │     │
-│  │ (455 líneas)       │     │ (258 líneas)          │     │
+│  │ (584 líneas)       │     │ (253 líneas)          │     │
 │  │                    │     │                       │     │
 │  │ - _fetch_schedule()│     │ - ContactInfo         │     │
 │  │   + CACHE (5 min)  │     │ - CustomerName        │     │
@@ -136,7 +137,7 @@ El **Agent Reservas** es un microservicio de IA conversacional que automatiza la
 │  └────────┬───────────┘                                    │
 │           │                      ┌───────────────────┐     │
 │           │                      │ booking.py        │     │
-│           │                      │ (158 líneas)      │     │
+│           │                      │ (186 líneas)      │     │
 │           │                      │                   │     │
 │           │                      │ confirm_booking() │     │
 │           │                      └────────┬──────────┘     │
@@ -149,29 +150,34 @@ El **Agent Reservas** es un microservicio de IA conversacional que automatiza la
 │  │                                                    │   │
 │  │  1. ws_informacion_ia.php                          │   │
 │  │     OBTENER_HORARIO_REUNIONES                      │   │
+│  │     OBTENER_SUCURSALES_PUBLICAS                    │   │
 │  │                                                    │   │
 │  │  2. n8n/ws_agendar_reunion.php                     │   │
 │  │     CONSULTAR_DISPONIBILIDAD                       │   │
+│  │     SUGERIR_HORARIOS                               │   │
 │  │     AGENDAR_REUNION                                │   │
 │  └────────────────────────────────────────────────────┘   │
 │                                                           │
 │  ┌─────────────────────────────────────────────────┐     │
 │  │  MÓDULOS DE SOPORTE                             │     │
 │  │                                                 │     │
-│  │  - config.py (39 líneas)                        │     │
+│  │  - config/config.py (52 líneas)                 │     │
 │  │    Variables de entorno                         │     │
 │  │                                                 │     │
-│  │  - logger.py (79 líneas)                        │     │
+│  │  - logger.py (78 líneas)                        │     │
 │  │    Sistema de logging centralizado              │     │
 │  │                                                 │     │
-│  │  - metrics.py (219 líneas)                      │     │
+│  │  - metrics.py (218 líneas)                      │     │
 │  │    Métricas Prometheus (13 métricas)            │     │
 │  │    Expuesto en /metrics                         │     │
 │  │                                                 │     │
-│  │  - models.py (38 líneas)                        │     │
-│  │    ChatRequest, ChatResponse, ReservaConfig     │     │
+│  │  - config/models.py (37 líneas)                 │     │
+│  │    ReservaConfig                                │     │
 │  │                                                 │     │
-│  │  - prompts/ (56 + 166 líneas)                   │     │
+│  │  - services/sucursales.py (107 líneas)          │     │
+│  │    Gestión de sucursales                        │     │
+│  │                                                 │     │
+│  │  - prompts/ (82 + 166 líneas)                   │     │
 │  │    __init__.py - Builder de prompts             │     │
 │  │    reserva_system.j2 - Template Jinja2          │     │
 │  └─────────────────────────────────────────────────┘     │
@@ -239,7 +245,7 @@ if __name__ == "__main__":
 
 ---
 
-### 2. src/reservas/agent.py (241 líneas)
+### 2. src/reservas/agent/agent.py (252 líneas)
 
 **Propósito:** Lógica central del agente de IA usando LangChain 1.2+ API moderna.
 
@@ -255,20 +261,22 @@ if __name__ == "__main__":
 **Componentes globales:**
 
 #### `_checkpointer = InMemorySaver()`
-- **Línea**: 31
+- **Línea**: 30
 - **Tipo**: Checkpointer global
 - **Propósito**: Memoria automática thread-safe
 - **Scope**: Global (compartido entre invocaciones)
 - **Limitación**: Volátil (se pierde al reiniciar)
 
 #### `AgentContext` (dataclass)
-- **Líneas**: 33-44
+- **Líneas**: 32-44
 - **Campos**:
   - `id_empresa: int` - **Requerido**
   - `duracion_cita_minutos: int = 60`
   - `slots: int = 60`
-  - `id_usuario: int = 1`
-  - `session_id: str = ""`
+  - `agendar_usuario: int = 1`
+  - `agendar_sucursal: int = 0`
+  - `id_prospecto: int = 0` - Mismo valor que session_id
+  - `session_id: int = 0` - **Ahora es int, no string**
 - **Propósito**: Esquema de runtime context para tools
 - **Uso**: Inyectado automáticamente por LangChain
 
@@ -312,11 +320,12 @@ model = init_chat_model(
   - `agendar_usuario` (opcional, bool→int, default 1)
 - **Retorna**: AgentContext configurado
 
-#### `process_reserva_message(message: str, session_id: str, context: Dict) -> str`
-- **Líneas**: 151-240
+#### `process_reserva_message(message: str, session_id: int, context: Dict) -> str`
+- **Líneas**: 162-251
 - **Propósito**: Función principal que procesa mensajes
+- **Nota**: `session_id` es **int**, no string (unificado con orquestador)
 - **Flujo**:
-  1. Validar entrada (message no vacío, session_id requerido)
+  1. Validar entrada (message no vacío, session_id >= 0)
   2. Registrar métrica: `chat_requests_total.inc()`
   3. Validar contexto: `_validate_context(context)`
   4. Crear agente: `_get_agent(config)`
@@ -354,7 +363,7 @@ with track_chat_response():
 
 ---
 
-### 3. src/reservas/tools.py (215 líneas)
+### 3. src/reservas/tools/tools.py (234 líneas)
 
 **Propósito:** Herramientas internas que el LLM usa para consultar disponibilidad y crear reservas.
 
@@ -368,29 +377,34 @@ with track_chat_response():
 
 **Tools disponibles:**
 
-#### `check_availability(service: str, date: str, runtime: ToolRuntime) -> str`
-- **Líneas**: 28-86
+#### `check_availability(service: str, date: str, time: Optional[str], runtime: ToolRuntime) -> str`
+- **Líneas**: 28-98
 - **Decorador**: `@tool`
 - **Propósito**: Consulta horarios disponibles
 - **Parámetros**:
   - `service` (str): Nombre del servicio (ej: "corte", "manicure")
   - `date` (str): Fecha en formato YYYY-MM-DD
+  - `time` (str, opcional): Hora en formato HH:MM AM/PM - **Nuevo parámetro**
   - `runtime` (ToolRuntime): Context automático de LangChain
 - **Extrae del runtime.context**:
   - `id_empresa`
   - `duracion_cita_minutos`
   - `slots`
-  - `id_usuario`
+  - `agendar_usuario`
+  - `agendar_sucursal`
 - **Proceso**:
   1. Extraer configuración del runtime context
-  2. Crear `ScheduleValidator(id_empresa, duracion_cita_minutos, slots, es_reservacion=True, agendar_usuario, agendar_sucursal=0)`
-  3. Obtener recomendaciones: `await validator.recommendation()`
+  2. Crear `ScheduleValidator(id_empresa, duracion_cita_minutos, slots, es_reservacion=True, agendar_usuario, agendar_sucursal)`
+  3. Obtener recomendaciones: `await validator.recommendation(fecha_solicitada=date, hora_solicitada=time)`
   4. Retornar texto formateado
+- **Comportamiento con `time`**:
+  - Si `time` viene con valor: Usa `CONSULTAR_DISPONIBILIDAD` para ese slot específico
+  - Si `time` es None: Usa `SUGERIR_HORARIOS` para hoy/mañana
 - **Retorna**:
-  - Si hay recomendaciones: Texto con horarios disponibles
+  - Si hay recomendaciones: Texto con horarios disponibles o confirmación de disponibilidad
   - Si no hay: Mensaje genérico de horarios típicos
 - **Fallback**: Si hay error, retorna horarios típicos (09:00, 10:00, 14:00, etc.)
-- **Logging**: INFO y WARNING levels
+- **Logging**: DEBUG, INFO y WARNING levels
 - **Métricas**: `track_tool_execution("check_availability")`
 
 **Ejemplo de retorno:**
@@ -401,8 +415,8 @@ Horarios disponibles:
 ...
 ```
 
-#### `create_booking(service, date, time, customer_name, customer_contact, runtime) -> str`
-- **Líneas**: 89-205
+#### `create_booking(service, date, time, customer_name, customer_contact, sucursal, runtime) -> str`
+- **Líneas**: 101-224
 - **Decorador**: `@tool`
 - **Propósito**: Crea reserva con validación completa
 - **Parámetros**:
@@ -411,13 +425,15 @@ Horarios disponibles:
   - `time` (str): Hora HH:MM AM/PM
   - `customer_name` (str): Nombre del cliente
   - `customer_contact` (str): Teléfono (9XXXXXXXX) o email
+  - `sucursal` (str, opcional): Nombre de la sucursal - **Nuevo parámetro**
   - `runtime` (ToolRuntime): Context automático
 - **Extrae del runtime.context**:
   - `id_empresa`
   - `duracion_cita_minutos`
   - `slots`
-  - `id_usuario`
-  - `session_id`
+  - `agendar_usuario`
+  - `agendar_sucursal`
+  - `id_prospecto` (mismo valor que session_id)
 - **Proceso (3 capas de validación)**:
 
 **1. CAPA 1 - Validación Pydantic:**
@@ -440,15 +456,22 @@ if not validation["valid"]:
 **3. CAPA 3 - Confirmación en API:**
 ```python
 booking_result = await confirm_booking(
-    id_empresa, id_prospecto=session_id, nombre_completo,
-    correo_o_telefono=customer_contact, fecha, hora, servicio, id_usuario
+    id_empresa=id_empresa,
+    id_prospecto=id_prospecto,  # mismo valor que session_id (int)
+    nombre_completo=customer_name,
+    correo_o_telefono=customer_contact,
+    fecha=date, hora=time, servicio=service,
+    agendar_usuario=agendar_usuario,
+    agendar_sucursal=agendar_sucursal,
+    duracion_cita_minutos=duracion_cita_minutos,
+    sucursal=sucursal
 )
 if booking_result["success"]:
-    return f"Reserva confirmada... Código: {booking_result['codigo']}"
+    return f"{booking_result['message']}\n\n**Detalles:**..."
 ```
 
 - **Retorna**:
-  - Si éxito: Mensaje formateado con detalles y código de reserva
+  - Si éxito: Mensaje formateado con detalles de la reserva
   - Si fallo: Mensaje de error descriptivo
 - **Logging**: DEBUG, INFO, WARNING levels
 - **Métricas**: `track_tool_execution("create_booking")`
@@ -462,9 +485,8 @@ Reserva confirmada exitosamente
 • Fecha: 2026-01-29
 • Hora: 02:00 PM
 • Nombre: Juan Pérez
-• **Código: RES-12345**
 
-Guarda este código para futuras consultas. ¡Te esperamos!
+¡Te esperamos!
 ```
 
 #### `AGENT_TOOLS`
@@ -484,24 +506,22 @@ Guarda este código para futuras consultas. ¡Te esperamos!
 
 ---
 
-### 4. src/reservas/schedule_validator.py (455 líneas)
+### 4. src/reservas/services/schedule_validator.py (584 líneas)
 
 **Propósito:** Validación de horarios con cache global y consulta a API externa.
 
-**Tecnología:** httpx async, threading.Lock (cache thread-safe)
+**Tecnología:** httpx async, threading.Lock (cache thread-safe), ZoneInfo (zona horaria Perú)
 
 **Responsabilidades:**
 - Obtener horarios desde API externa (con cache TTL)
 - Validar fecha/hora contra reglas de negocio
 - Verificar disponibilidad contra citas existentes
-- Generar recomendaciones de horarios
+- Generar recomendaciones de horarios (SUGERIR_HORARIOS para hoy/mañana)
+- Manejar zona horaria de Perú (America/Lima)
 
 **Constantes:**
 
 ```python
-AGENDAR_REUNIONES_ENDPOINT = "https://api.maravia.pe/servicio/n8n/ws_agendar_reunion.php"
-INFORMATION_ENDPOINT = "https://api.maravia.pe/servicio/ws_informacion_ia.php"
-
 DAY_MAPPING = {
     0: "reunion_lunes",
     1: "reunion_martes",
@@ -511,6 +531,13 @@ DAY_MAPPING = {
     5: "reunion_sabado",
     6: "reunion_domingo"
 }
+
+DIAS_ESPANOL = {
+    "Monday": "Lunes", "Tuesday": "Martes", "Wednesday": "Miércoles",
+    "Thursday": "Jueves", "Friday": "Viernes", "Saturday": "Sábado", "Sunday": "Domingo"
+}
+
+_ZONA_PERU = ZoneInfo("America/Lima")
 ```
 
 **Cache Global (thread-safe):**
@@ -707,14 +734,23 @@ return {"valid": True, "error": None}
 - **Retorna**: `{"available": bool, "error": str | None}`
 - **Graceful degradation**: Si falla API, retorna available=true
 
-#### `recommendation() -> Dict[str, Any]`
-- **Líneas**: 423-451
-- **Propósito**: Generar recomendaciones de horarios
+#### `recommendation(fecha_solicitada: Optional[str], hora_solicitada: Optional[str]) -> Dict[str, Any]`
+- **Líneas**: 437-581
+- **Propósito**: Generar recomendaciones de horarios inteligentes
+- **Parámetros nuevos**:
+  - `fecha_solicitada`: Fecha YYYY-MM-DD que el cliente consulta (opcional)
+  - `hora_solicitada`: Hora HH:MM AM/PM específica (opcional)
 - **Proceso**:
-  1. Obtener schedule (con cache)
-  2. Construir texto con horarios por día
-  3. Filtrar días cerrados
-- **Retorna**: `{"text": "Horarios disponibles:\n• Lunes: 09:00-18:00\n..."}`
+  1. Si viene fecha+hora: Usa `CONSULTAR_DISPONIBILIDAD` para ese slot exacto
+  2. Si fecha es hoy/mañana (o no viene): Usa `SUGERIR_HORARIOS`
+  3. Si fecha es otra: Muestra horario de atención del día
+  4. Fallback: Usa `OBTENER_HORARIO_REUNIONES` para mostrar horarios por día
+- **Retorna**: `{"text": "...", "recommendations": [...], "total": N, "message": "..."}`
+
+**Endpoints usados:**
+- `SUGERIR_HORARIOS`: Obtiene sugerencias para hoy y mañana con disponibilidad real
+- `CONSULTAR_DISPONIBILIDAD`: Verifica disponibilidad de un slot específico
+- `OBTENER_HORARIO_REUNIONES`: Obtiene horarios de atención por día (fallback)
 
 **Métodos auxiliares:**
 
@@ -734,78 +770,87 @@ return {"valid": True, "error": None}
 
 ---
 
-### 5. src/reservas/booking.py (158 líneas)
+### 5. src/reservas/services/booking.py (186 líneas)
 
-**Propósito:** Confirmar reservas en la API real de MaravIA.
+**Propósito:** Confirmar reservas en la API real de MaravIA (payload según documentación n8n).
 
 **Tecnología:** httpx async
 
 **Responsabilidades:**
-- Enviar datos de reserva a API externa
-- Obtener código de confirmación
+- Construir fecha_inicio y fecha_fin a partir de fecha + hora + duración
+- Enviar datos de reserva a API externa con formato n8n
 - Registrar métricas de éxito/fallo
 - Manejo de errores HTTP
 
-**Constante:**
-```python
-AGENDAR_REUNIONES_ENDPOINT = "https://api.maravia.pe/servicio/n8n/ws_agendar_reunion.php"
-```
+**Funciones auxiliares:**
+
+#### `_parse_time_to_24h(hora: str) -> str`
+- Convierte hora HH:MM AM/PM a formato 24h (HH:MM:SS)
+
+#### `_build_fecha_inicio_fin(fecha: str, hora: str, duracion_minutos: int) -> tuple`
+- Construye `fecha_inicio` y `fecha_fin` en formato `YYYY-MM-DD HH:MM:SS`
 
 **Función principal:**
 
 #### `confirm_booking(...) -> Dict[str, Any]`
-- **Líneas**: 23-154
+- **Líneas**: 53-183
 - **Parámetros**:
   - `id_empresa: int`
-  - `id_prospecto: str` - Session ID
+  - `id_prospecto: int` - **Ahora es int** (mismo valor que session_id)
   - `nombre_completo: str`
   - `correo_o_telefono: str`
   - `fecha: str` - YYYY-MM-DD
   - `hora: str` - HH:MM AM/PM
   - `servicio: str`
-  - `id_usuario: int`
-  - `sucursal: str = None` (opcional)
+  - `agendar_usuario: int` - **Nuevo** (1 = sí, 0 = no)
+  - `agendar_sucursal: int` - **Nuevo** (1 = sí, 0 = no)
+  - `duracion_cita_minutos: int = 60`
+  - `sucursal: Optional[str] = None`
 
 - **Retorna**:
   ```python
   {
       "success": bool,
-      "codigo": str | None,  # Código de reserva si success=True
       "message": str,
       "error": str | None
   }
   ```
+  **Nota**: Ya NO retorna `codigo` (la API no lo devuelve actualmente)
 
 **Flujo:**
 
-1. **Registrar intento**:
+1. **Construir fechas**:
+   ```python
+   fecha_inicio, fecha_fin = _build_fecha_inicio_fin(fecha, hora, duracion_cita_minutos)
+   # "2026-01-29 14:00:00", "2026-01-29 15:00:00"
+   ```
+
+2. **Registrar intento**:
    ```python
    record_booking_attempt()  # Métrica
    ```
 
-2. **Preparar payload**:
+3. **Preparar payload (formato n8n)**:
    ```python
    payload = {
        "codOpe": "AGENDAR_REUNION",
        "id_empresa": 123,
-       "id_prospecto": "session-id",
-       "nombre_completo": "Juan Pérez",
-       "correo_electronico": "987654321",  # ← Nota: campo es "correo_electronico" aunque puede ser teléfono
-       "fecha_cita": "2026-01-29",
-       "hora_cita": "02:00 PM",
-       "servicio": "Corte de cabello",
-       "id_usuario": 1
+       "titulo": "Reunion para el usuario: Juan Pérez",
+       "fecha_inicio": "2026-01-29 14:00:00",
+       "fecha_fin": "2026-01-29 15:00:00",
+       "id_prospecto": 1002,  # int, mismo valor que session_id
+       "agendar_usuario": 1,
+       "agendar_sucursal": 0,
+       "sucursal": "Miraflores" or "No hay sucursal registrada"
    }
-   if sucursal:
-       payload["sucursal"] = sucursal
    ```
 
-3. **Llamar API**:
+4. **Llamar API**:
    ```python
    with track_api_call("agendar_reunion"):
        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
            response = await client.post(
-               AGENDAR_REUNIONES_ENDPOINT,
+               app_config.API_AGENDAR_REUNION_URL,
                json=payload,
                headers={"Content-Type": "application/json"}
            )
@@ -813,24 +858,22 @@ AGENDAR_REUNIONES_ENDPOINT = "https://api.maravia.pe/servicio/n8n/ws_agendar_reu
            data = response.json()
    ```
 
-4. **Procesar respuesta**:
+5. **Procesar respuesta**:
    ```python
    if data.get("success"):
-       codigo = data.get("codigo_cita")  # "RES-12345"
+       message = data.get("message") or "Reserva confirmada exitosamente"
        record_booking_success()
        return {
            "success": True,
-           "codigo": codigo,
-           "message": f"Reserva confirmada... Código: {codigo}",
+           "message": message,
            "error": None
        }
    else:
-       error_msg = data.get("message", "Error desconocido")
+       error_msg = data.get("message") or data.get("error") or "Error desconocido"
        record_booking_failure("api_error")
        return {
            "success": False,
-           "codigo": None,
-           "message": "No se pudo confirmar...",
+           "message": error_msg,
            "error": error_msg
        }
    ```
@@ -864,14 +907,38 @@ AGENDAR_REUNIONES_ENDPOINT = "https://api.maravia.pe/servicio/n8n/ws_agendar_reu
 **Es llamado por:** `tools.create_booking()`
 
 **Llama a:**
-- API externa (httpx async)
+- API externa (httpx async): `app_config.API_AGENDAR_REUNION_URL`
 - `logger.*`
 - `metrics.record_booking_attempt/success/failure()`
 - `config.API_TIMEOUT`
 
 ---
 
-### 6. src/reservas/validation.py (258 líneas)
+### 6. src/reservas/services/sucursales.py (107 líneas)
+
+**Propósito:** Obtener y formatear sucursales públicas desde la API.
+
+**Tecnología:** requests (sync)
+
+**Responsabilidades:**
+- Fetch de sucursales desde API `OBTENER_SUCURSALES_PUBLICAS`
+- Formatear lista de sucursales para el system prompt
+- Incluir horarios por día de cada sucursal
+
+**Funciones:**
+
+#### `format_sucursales_for_system_prompt(sucursales: List[Dict]) -> str`
+- Formatea la lista de sucursales con nombre, dirección, ubicación (mapa) y horarios L-D
+
+#### `fetch_sucursales_publicas(id_empresa: Optional[Any]) -> str`
+- Obtiene sucursales desde la API y las devuelve formateadas
+- Retorna "No hay sucursales cargadas." si falla o no hay datos
+
+**Es llamado por:** `prompts/__init__.py` (para inyectar en system prompt)
+
+---
+
+### 7. src/reservas/validation.py (253 líneas)
 
 **Propósito:** Validadores de datos con Pydantic 2.6+.
 
@@ -987,7 +1054,7 @@ BookingData(
 
 ---
 
-### 7. src/reservas/config.py (39 líneas)
+### 8. src/reservas/config/config.py (52 líneas)
 
 **Propósito:** Configuración centralizada desde variables de entorno.
 
@@ -1007,20 +1074,21 @@ _BASE_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(_BASE_DIR / ".env")
 ```
 
-**Variables (11 configurables):**
+**Variables (13 configurables):**
 
 ```python
 # OpenAI
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0.4"))
 
 # Servidor
 SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
 SERVER_PORT = int(os.getenv("SERVER_PORT", "8003"))
 
-# Futuras (no usadas)
-DATABASE_URL = os.getenv("DATABASE_URL", "")
-REDIS_URL = os.getenv("REDIS_URL", "")
+# APIs externas
+API_AGENDAR_REUNION_URL = os.getenv("API_AGENDAR_REUNION_URL", "https://api.maravia.pe/...")
+API_INFORMACION_URL = os.getenv("API_INFORMACION_URL", "https://api.maravia.pe/...")
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
@@ -1033,6 +1101,9 @@ MAX_TOKENS = int(os.getenv("MAX_TOKENS", "2048"))
 
 # Cache
 SCHEDULE_CACHE_TTL_MINUTES = int(os.getenv("SCHEDULE_CACHE_TTL_MINUTES", "5"))
+
+# Zona horaria
+TIMEZONE = os.getenv("TIMEZONE", "America/Lima")
 ```
 
 **Es llamado por:** TODOS los módulos (importado como `app_config`)
@@ -1041,7 +1112,7 @@ SCHEDULE_CACHE_TTL_MINUTES = int(os.getenv("SCHEDULE_CACHE_TTL_MINUTES", "5"))
 
 ---
 
-### 8. src/reservas/logger.py (79 líneas)
+### 9. src/reservas/logger.py (78 líneas)
 
 **Propósito:** Sistema de logging centralizado.
 
@@ -1098,7 +1169,7 @@ logger = get_logger("reservas")
 
 ---
 
-### 9. src/reservas/metrics.py (219 líneas)
+### 10. src/reservas/metrics.py (218 líneas)
 
 **Propósito:** Sistema de métricas Prometheus.
 
@@ -1201,7 +1272,7 @@ logger = get_logger("reservas")
 
 ---
 
-### 10. src/reservas/models.py (38 líneas)
+### 11. src/reservas/config/models.py (37 líneas)
 
 **Propósito:** Modelos Pydantic para requests/responses.
 
@@ -1239,7 +1310,7 @@ logger = get_logger("reservas")
 
 ---
 
-### 11. src/reservas/prompts/__init__.py (56 líneas)
+### 12. src/reservas/prompts/__init__.py (82 líneas)
 
 **Propósito:** Constructor de system prompt con Jinja2.
 
@@ -1294,7 +1365,7 @@ _DEFAULTS = {
 
 ---
 
-### 12. src/reservas/prompts/reserva_system.j2 (166 líneas)
+### 13. src/reservas/prompts/reserva_system.j2 (166 líneas)
 
 **Propósito:** Template Jinja2 del system prompt.
 
@@ -1366,7 +1437,7 @@ _DEFAULTS = {
 
 ---
 
-### 13. src/reservas/__init__.py (42 líneas)
+### 14. src/reservas/__init__.py (41 líneas)
 
 **Propósito:** Módulo de inicialización y exports.
 
@@ -1416,8 +1487,8 @@ __all__ = [
      "tool": "chat",
      "arguments": {
        "message": "¿Tienen horarios el viernes?",
-       "session_id": "sess-001",
-       "context": {"config": {"id_empresa": 123}}
+       "session_id": 1001,
+       "context": {"config": {"id_empresa": 123, "agendar_usuario": 1, "agendar_sucursal": 0}}
      }
    }
 
@@ -1426,10 +1497,10 @@ __all__ = [
    ↓ logger.info("[MCP] Mensaje recibido")
    ↓ Llama a agent.process_reserva_message()
 
-3. agent.process_reserva_message() [agent.py:151]
+3. agent.process_reserva_message() [agent.py:162]
    ↓
    ├─ Valida message no vacío ✓
-   ├─ Valida session_id presente ✓
+   ├─ Valida session_id >= 0 ✓
    ├─ chat_requests_total.inc()
    ├─ _validate_context(context)
    │  └─ Verifica id_empresa=123 ✓
@@ -1440,8 +1511,8 @@ __all__ = [
    │  │  └─ Renderiza template con personalidad="amable, profesional y eficiente"
    │  └─ create_agent(model, tools=[check_availability, create_booking], prompt, checkpointer)
    │
-   ├─ _prepare_agent_context(context, "sess-001")
-   │  └─ AgentContext(id_empresa=123, duracion_cita_minutos=60, slots=60, id_usuario=1, session_id="sess-001")
+   ├─ _prepare_agent_context(context, 1001)
+   │  └─ AgentContext(id_empresa=123, duracion_cita_minutos=60, slots=60, agendar_usuario=1, agendar_sucursal=0, id_prospecto=1001, session_id=1001)
    │
    └─ agent.invoke()
       with track_chat_response():
@@ -1459,13 +1530,14 @@ __all__ = [
                   │  id_empresa = 123
                   │  duracion_cita_minutos = 60
                   │  slots = 60
-                  │  id_usuario = 1
+                  │  agendar_usuario = 1
+                  │  agendar_sucursal = 0
                   │
                   ├─ ScheduleValidator(id_empresa=123, duracion_cita_minutos=60, slots=60, es_reservacion=True, agendar_usuario=1, agendar_sucursal=0)
                   │
-                  └─ await validator.recommendation()
+                  └─ await validator.recommendation(fecha_solicitada="2026-01-31", hora_solicitada=None)
                      ↓
-                     6. schedule_validator.recommendation() [schedule_validator.py:423]
+                     6. schedule_validator.recommendation() [schedule_validator.py:437]
                         ↓
                         ├─ await _fetch_schedule()
                         │  ↓
@@ -1536,8 +1608,8 @@ __all__ = [
    ↓
    {
      "message": "Necesito corte de cabello para mañana a las 2pm, soy Juan Pérez, mi teléfono es 987654321",
-     "session_id": "sess-002",
-     "context": {"config": {"id_empresa": 123}}
+     "session_id": 1002,
+     "context": {"config": {"id_empresa": 123, "agendar_usuario": 1, "agendar_sucursal": 0}}
    }
 
 2. main.chat() → agent.process_reserva_message()
@@ -1553,12 +1625,12 @@ __all__ = [
          ↓ System prompt indica que con todos los datos debe usar create_booking
          ↓ Decide: create_booking("Corte de cabello", "2026-01-29", "02:00 PM", "Juan Pérez", "987654321")
          ↓
-         5. tools.create_booking() [tools.py:89]
+         5. tools.create_booking() [tools.py:101]
             with track_tool_execution("create_booking"):
               ↓
               ├─ Extrae runtime.context
               │  id_empresa = 123, duracion_cita_minutos = 60, slots = 60
-              │  id_usuario = 1, session_id = "sess-002"
+              │  agendar_usuario = 1, agendar_sucursal = 0, id_prospecto = 1002
               │
               ├─ CAPA 1: VALIDACIÓN PYDANTIC
               │  ↓
@@ -1648,21 +1720,24 @@ __all__ = [
               │
               ├─ CONFIRMACIÓN EN API
               │  ↓
-              │  10. booking.confirm_booking() [booking.py:23]
+              │  10. booking.confirm_booking() [booking.py:53]
               │      ↓
+              │      ├─ _build_fecha_inicio_fin("2026-01-29", "02:00 PM", 60)
+              │      │  └─ ("2026-01-29 14:00:00", "2026-01-29 15:00:00")
+              │      │
               │      ├─ record_booking_attempt()
               │      │
-              │      ├─ Preparar payload:
+              │      ├─ Preparar payload (formato n8n):
               │      │  {
               │      │    "codOpe": "AGENDAR_REUNION",
               │      │    "id_empresa": 123,
-              │      │    "id_prospecto": "sess-002",
-              │      │    "nombre_completo": "Juan Pérez",
-              │      │    "correo_electronico": "987654321",
-              │      │    "fecha_cita": "2026-01-29",
-              │      │    "hora_cita": "02:00 PM",
-              │      │    "servicio": "Corte de cabello",
-              │      │    "id_usuario": 1
+              │      │    "titulo": "Reunion para el usuario: Juan Pérez",
+              │      │    "fecha_inicio": "2026-01-29 14:00:00",
+              │      │    "fecha_fin": "2026-01-29 15:00:00",
+              │      │    "id_prospecto": 1002,
+              │      │    "agendar_usuario": 1,
+              │      │    "agendar_sucursal": 0,
+              │      │    "sucursal": "No hay sucursal registrada"
               │      │  }
               │      │
               │      ├─ POST https://api.maravia.pe/servicio/n8n/ws_agendar_reunion.php
@@ -1670,15 +1745,14 @@ __all__ = [
               │      │    Timeout: 10s
               │      │    Response: {
               │      │      "success": true,
-              │      │      "codigo_cita": "RES-12345"
+              │      │      "message": "Reserva confirmada exitosamente"
               │      │    }
               │      │
               │      ├─ record_booking_success()
               │      │
               │      └─ return {
               │           "success": True,
-              │           "codigo": "RES-12345",
-              │           "message": "Reserva confirmada... Código: RES-12345",
+              │           "message": "Reserva confirmada exitosamente",
               │           "error": None
               │         }
               │
@@ -1690,9 +1764,8 @@ __all__ = [
 • Fecha: 2026-01-29
 • Hora: 02:00 PM
 • Nombre: Juan Pérez
-• **Código: RES-12345**
 
-Guarda este código para futuras consultas. ¡Te esperamos!"""
+¡Te esperamos!"""
 
          ↓ LLM recibe resultado de create_booking
          ↓ LLM retorna directamente (ya está formateado)
@@ -1979,7 +2052,7 @@ config.py (0 dependencias internas)
 - Nivel 4: agent.py
 - Nivel 5: main.py
 
-**Total de archivos:** 13 (sin contar __init__.py vacíos)
+**Total de archivos:** 14 (sin contar __init__.py vacíos)
 
 ---
 
@@ -2001,4 +2074,4 @@ El flujo de datos es claro y la separación de responsabilidades permite manteni
 ---
 
 **Versión:** 2.0.0
-**Última actualización:** 2026-01-28
+**Última actualización:** 2026-02-02

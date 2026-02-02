@@ -141,7 +141,7 @@ class ScheduleValidator:
             "codOpe": "OBTENER_HORARIO_REUNIONES",
             "id_empresa": self.id_empresa
         }
-        print("[SCHEDULE] JSON enviado a ws_informacion_ia.php (OBTENER_HORARIO_REUNIONES):", json.dumps(payload_horario, ensure_ascii=False, indent=2))
+        logger.debug("[SCHEDULE] JSON enviado a ws_informacion_ia.php (OBTENER_HORARIO_REUNIONES): %s", json.dumps(payload_horario, ensure_ascii=False, indent=2))
         try:
             with track_api_call("obtener_horario"):
                 async with httpx.AsyncClient(timeout=app_config.API_TIMEOUT) as client:
@@ -306,7 +306,7 @@ class ScheduleValidator:
                 payload["sucursal"] = self.sucursal
 
             logger.debug(f"[AVAILABILITY] Consultando: {fecha_str} {hora_str}")
-            print("[AVAILABILITY] JSON enviado a ws_agendar_reunion.php (CONSULTAR_DISPONIBILIDAD):", json.dumps(payload, ensure_ascii=False, indent=2))
+            logger.debug("[AVAILABILITY] JSON enviado a ws_agendar_reunion.php (CONSULTAR_DISPONIBILIDAD): %s", json.dumps(payload, ensure_ascii=False, indent=2))
 
             with track_api_call("consultar_disponibilidad"):
                 async with httpx.AsyncClient(timeout=app_config.API_TIMEOUT) as client:
@@ -507,7 +507,7 @@ class ScheduleValidator:
         if self.sucursal:
             payload["sucursal"] = self.sucursal
 
-        print("[RECOMMENDATION] JSON enviado a ws_agendar_reunion.php (SUGERIR_HORARIOS):", json.dumps(payload, ensure_ascii=False, indent=2))
+        logger.debug("[RECOMMENDATION] JSON enviado a ws_agendar_reunion.php (SUGERIR_HORARIOS): %s", json.dumps(payload, ensure_ascii=False, indent=2))
         try:
             with track_api_call("sugerir_horarios"):
                 async with httpx.AsyncClient(timeout=app_config.API_TIMEOUT) as client:

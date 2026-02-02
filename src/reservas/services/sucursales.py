@@ -81,7 +81,7 @@ def fetch_sucursales_publicas(id_empresa: Optional[Any]) -> str:
         "codOpe": "OBTENER_SUCURSALES_PUBLICAS",
         "id_empresa": id_empresa,
     }
-    print("[SUCURSALES] JSON enviado a ws_informacion_ia.php (OBTENER_SUCURSALES_PUBLICAS):", json.dumps(payload_sucursales, ensure_ascii=False, indent=2))
+    logger.debug("[SUCURSALES] JSON enviado a ws_informacion_ia.php (OBTENER_SUCURSALES_PUBLICAS): %s", json.dumps(payload_sucursales, ensure_ascii=False, indent=2))
     try:
         response = requests.post(
             app_config.API_INFORMACION_URL,

@@ -15,6 +15,7 @@ except ImportError:
     from reservas.config import config as _app_config
 
 from ..services.sucursales import fetch_sucursales_publicas
+from ..services.paquetes_servicios import fetch_servicios_paquetes
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent
 _ZONA_PERU = ZoneInfo(getattr(_app_config, "TIMEZONE", "America/Lima"))
@@ -22,6 +23,7 @@ _ZONA_PERU = ZoneInfo(getattr(_app_config, "TIMEZONE", "America/Lima"))
 _DEFAULTS: Dict[str, Any] = {
     "personalidad": "amable, profesional y eficiente",
     "informacion_sucursales": "No hay sucursales cargadas.",
+    "informacion_servicios": "No hay servicios cargados.",
 }
 
 
@@ -68,9 +70,10 @@ def build_reserva_system_prompt(
     variables["fecha_formateada"] = variables.get("fecha_formateada") or now.strftime("%d/%m/%Y")
     variables["hora_actual"] = now.strftime("%I:%M %p")
     
-    # Obtener sucursales desde la API e inyectar en el prompt
+    # Obtener sucursales y servicios desde la API e inyectar en el prompt
     id_empresa = config.get("id_empresa")
     variables["informacion_sucursales"] = fetch_sucursales_publicas(id_empresa)
+    variables["informacion_servicios"] = fetch_servicios_paquetes(id_empresa)
     
     # Agregar historial
     variables["history"] = history or []

@@ -37,15 +37,15 @@ def _parse_time_to_24h(hora: str) -> str:
     return f"{h:02d}:{m:02d}:00"
 
 
-def _build_fecha_inicio_fin(fecha: str, hora: str, duracion_minutos: int) -> tuple:
-    """Construye fecha_inicio y fecha_fin en formato YYYY-MM-DD HH:MM:SS."""
+def _build_fecha_inicio_fin(fecha: str, hora: str, duracion_horas: int) -> tuple:
+    """Construye fecha_inicio y fecha_fin en formato YYYY-MM-DD HH:MM:SS. duracion_horas: duración en horas (entero)."""
     time_24 = _parse_time_to_24h(hora)
     fecha_inicio = f"{fecha} {time_24}"
     try:
         dt_start = datetime.strptime(fecha_inicio, "%Y-%m-%d %H:%M:%S")
     except ValueError:
         raise ValueError(f"Fecha/hora no válidos: {fecha} {hora}")
-    dt_end = dt_start + timedelta(minutes=duracion_minutos)
+    dt_end = dt_start + timedelta(hours=duracion_horas)
     fecha_fin = dt_end.strftime("%Y-%m-%d %H:%M:%S")
     return fecha_inicio, fecha_fin
 
@@ -60,7 +60,7 @@ async def confirm_booking(
     servicio: str,
     agendar_usuario: int,
     agendar_sucursal: int,
-    duracion_cita_minutos: int = 60,
+    duracion_horas: int = 1,
     sucursal: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
@@ -72,11 +72,11 @@ async def confirm_booking(
         nombre_completo: Nombre completo del cliente
         correo_o_telefono: Teléfono del cliente (9 dígitos)
         fecha: Fecha en formato YYYY-MM-DD
-        hora: Hora en formato HH:MM AM/PM
+        hora: Hora de inicio en formato HH:MM AM/PM
         servicio: Servicio/motivo de la reserva (usado en titulo/descripción)
         agendar_usuario: 1 = agendar por usuario, 0 = no
         agendar_sucursal: 1 = agendar por sucursal, 0 = no
-        duracion_cita_minutos: Minutos de la cita para calcular fecha_fin
+        duracion_horas: Duración en horas (entero; tipo 1 = horas que eligió el cliente, tipo 2 = duración del paquete, ej. 3)
         sucursal: (Opcional) Sucursal donde se realiza la reserva
 
     Returns:
@@ -85,7 +85,7 @@ async def confirm_booking(
     record_booking_attempt()
 
     try:
-        fecha_inicio, fecha_fin = _build_fecha_inicio_fin(fecha, hora, duracion_cita_minutos)
+        fecha_inicio, fecha_fin = _build_fecha_inicio_fin(fecha, hora, duracion_horas)
     except ValueError as e:
         logger.warning(f"[BOOKING] Fecha/hora inválidos: {e}")
         record_booking_failure("invalid_datetime")

@@ -270,13 +270,19 @@ class ScheduleValidator:
 
         return False
 
-    async def _check_availability(self, fecha_str: str, hora_str: str) -> Dict[str, Any]:
+    async def _check_availability(
+        self,
+        fecha_str: str,
+        hora_str: str,
+        duracion_horas: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """
         Verifica disponibilidad contra citas existentes.
 
         Args:
             fecha_str: Fecha en formato YYYY-MM-DD
-            hora_str: Hora en formato HH:MM AM/PM
+            hora_str: Hora de inicio en formato HH:MM AM/PM
+            duracion_horas: Duración en horas (entero) para el slot. Si None, usa self.duracion_cita.
 
         Returns:
             Dict con:
@@ -290,7 +296,10 @@ class ScheduleValidator:
                 return {"available": True, "error": None}
 
             fecha_hora_inicio = fecha.replace(hour=hora.hour, minute=hora.minute)
-            fecha_hora_fin = fecha_hora_inicio + self.duracion_cita
+            if duracion_horas is not None:
+                fecha_hora_fin = fecha_hora_inicio + timedelta(hours=duracion_horas)
+            else:
+                fecha_hora_fin = fecha_hora_inicio + self.duracion_cita
 
             payload = {
                 "codOpe": "CONSULTAR_DISPONIBILIDAD",
@@ -342,13 +351,19 @@ class ScheduleValidator:
             logger.warning(f"[AVAILABILITY] Error inesperado: {e} - graceful degradation")
             return {"available": True, "error": None}
 
-    async def validate(self, fecha_str: str, hora_str: str) -> Dict[str, Any]:
+    async def validate(
+        self,
+        fecha_str: str,
+        hora_str: str,
+        duracion_horas: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """
         Valida si la fecha y hora son válidas para agendar.
 
         Args:
             fecha_str: Fecha en formato YYYY-MM-DD
-            hora_str: Hora en formato HH:MM AM/PM
+            hora_str: Hora de inicio en formato HH:MM AM/PM
+            duracion_horas: Duración en horas (entero). Si None, usa self.duracion_cita.
 
         Returns:
             Dict con:
@@ -412,13 +427,15 @@ class ScheduleValidator:
             return {"valid": False, "error": f"La hora seleccionada es después del horario de atención. El horario del {nombre_dia} es de {horario_formateado}."}
 
         # 10. Validar que la cita + duración no exceda la hora de cierre
-        hora_fin_cita = fecha_hora_cita + self.duracion_cita
+        duracion_td = timedelta(hours=duracion_horas) if duracion_horas is not None else self.duracion_cita
+        hora_fin_cita = fecha_hora_cita + duracion_td
         hora_cierre = fecha.replace(hour=hora_fin.hour, minute=hora_fin.minute)
 
         if hora_fin_cita > hora_cierre:
+            mins = int(duracion_td.total_seconds() // 60)
             return {
                 "valid": False,
-                "error": f"La reserva de {self.duracion_cita.seconds // 60} minutos excedería el horario de atención (cierre: {hora_fin.strftime('%I:%M %p')}). El horario del {nombre_dia} es de {horario_formateado}. Por favor elige una hora más temprana."
+                "error": f"La reserva de {mins} minutos excedería el horario de atención (cierre: {hora_fin.strftime('%I:%M %p')}). El horario del {nombre_dia} es de {horario_formateado}. Por favor elige una hora más temprana."
             }
 
         # 11. Validar horarios bloqueados
@@ -427,7 +444,7 @@ class ScheduleValidator:
             return {"valid": False, "error": "El horario seleccionado está bloqueado. Por favor elige otra hora."}
 
         # 12. Verificar disponibilidad contra citas existentes
-        availability = await self._check_availability(fecha_str, hora_str)
+        availability = await self._check_availability(fecha_str, hora_str, duracion_horas=duracion_horas)
         if not availability["available"]:
             return {"valid": False, "error": availability["error"]}
 
@@ -438,16 +455,17 @@ class ScheduleValidator:
         self,
         fecha_solicitada: Optional[str] = None,
         hora_solicitada: Optional[str] = None,
+        duracion_horas: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Genera recomendaciones de horarios disponibles.
         Si el cliente dio fecha Y hora concretas, primero consulta CONSULTAR_DISPONIBILIDAD para ese slot.
         Si solo fecha (o hoy/mañana sin hora), usa SUGERIR_HORARIOS o horario del día.
-        
+
         Args:
             fecha_solicitada: Fecha en YYYY-MM-DD que el cliente está consultando. Opcional.
             hora_solicitada: Hora en HH:MM AM/PM que el cliente indicó. Opcional. Si viene con fecha, se consulta disponibilidad exacta.
-        
+            duracion_horas: Duración en horas (entero) para el slot. Si None, usa self.duracion_cita.
         Returns:
             Dict con "text" y opcionalmente "recommendations", "total", "message"
         """
@@ -458,7 +476,11 @@ class ScheduleValidator:
         # Si el cliente indicó fecha Y hora concretas, consultar disponibilidad exacta (CONSULTAR_DISPONIBILIDAD) primero
         if fecha_solicitada and hora_solicitada and hora_solicitada.strip():
             try:
-                availability = await self._check_availability(fecha_solicitada.strip(), hora_solicitada.strip())
+                availability = await self._check_availability(
+                    fecha_solicitada.strip(),
+                    hora_solicitada.strip(),
+                    duracion_horas=duracion_horas,
+                )
                 if availability.get("available"):
                     return {
                         "text": f"El {fecha_solicitada} a las {hora_solicitada.strip()} está disponible. ¿Confirmamos la reserva?"
@@ -496,10 +518,11 @@ class ScheduleValidator:
                 pass
 
         # 1. Intentar SUGERIR_HORARIOS (hoy y mañana)
+        duracion_min = (duracion_horas * 60) if duracion_horas is not None else self.duracion_minutos
         payload = {
             "codOpe": "SUGERIR_HORARIOS",
             "id_empresa": self.id_empresa,
-            "duracion_minutos": self.duracion_minutos,
+            "duracion_minutos": duracion_min,
             "slots": self.slots,
             "agendar_usuario": self.agendar_usuario,
             "agendar_sucursal": self.agendar_sucursal,

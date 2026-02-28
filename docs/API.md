@@ -4,60 +4,62 @@ Referencia de la API del agente especializado en reservas.
 
 ## Descripción General
 
-El agente se comunica mediante **MCP (Model Context Protocol)** sobre HTTP. Expone una única herramienta que maneja toda la lógica de conversación y reservas de forma autónoma.
+El agente se comunica mediante **REST HTTP** (FastAPI). Expone un endpoint principal que maneja toda la lógica de conversación y reservas de forma autónoma.
 
-**Protocolo**: MCP
-**Transporte**: HTTP
+**Protocolo**: HTTP REST
 **Puerto**: 8003 (configurable)
-**Endpoint base**: `http://localhost:8003`
+**Base URL**: `http://localhost:8003`
 
-## Endpoint Principal
+---
 
-### Tool: `chat`
+## Endpoints
+
+### POST /chat
 
 Procesa mensajes del usuario y gestiona el flujo completo de reservas.
 
-El agente internamente usa dos herramientas propias:
+El agente internamente usa herramientas propias:
 - `check_availability` - Consulta horarios disponibles
 - `create_booking` - Crea reservas con validación
+- `search_productos_servicios` - Busca en el catálogo de productos/servicios
 
-**El orquestador NO llama directamente a estas herramientas**, solo usa `chat`.
+**El gateway NO llama directamente a estas herramientas**, solo usa `/chat`.
 
 ---
 
 ## Request
 
-### Formato MCP
+```
+POST /chat
+Content-Type: application/json
+```
 
 ```json
 {
-  "tool": "chat",
-  "arguments": {
-    "message": "Quiero reservar para mañana a las 2pm",
-    "session_id": 12345,
-    "context": {
-      "config": {
-        "id_empresa": 123,
-        "personalidad": "amable y profesional",
-        "duracion_cita_minutos": 60,
-        "slots": 60,
-        "agendar_usuario": 1,
-        "agendar_sucursal": 0
-      }
+  "message": "Quiero reservar para mañana a las 2pm",
+  "session_id": 12345,
+  "context": {
+    "config": {
+      "id_empresa": 123,
+      "personalidad": "amable y profesional",
+      "duracion_cita_minutos": 60,
+      "slots": 60,
+      "agendar_usuario": 1,
+      "agendar_sucursal": 0
     }
   }
 }
 ```
 
-### Parámetros
+### Parámetros del body
 
-| Parámetro | Tipo | Requerido | Default | Descripción |
-|-----------|------|-----------|---------|-------------|
-| `message` | string | ✅ Sí | - | Mensaje del usuario que quiere reservar |
-| `session_id` | integer | ✅ Sí | - | ID único de sesión para memoria conversacional (int, no string) |
-| `context` | object | ✅ Sí | - | Contexto de configuración |
+| Parámetro | Tipo | Requerido | Descripción |
+|-----------|------|-----------|-------------|
+| `message` | string | ✅ Sí | Mensaje del usuario que quiere reservar |
+| `session_id` | integer | ✅ Sí | ID único de sesión para memoria conversacional |
+| `context` | object | ✅ Sí | Contexto de configuración |
 
-#### Parámetros de `context.config`
+### Parámetros de `context.config`
 
 | Parámetro | Tipo | Requerido | Default | Descripción |
 |-----------|------|-----------|---------|-------------|
@@ -65,28 +67,26 @@ El agente internamente usa dos herramientas propias:
 | `personalidad` | string | ❌ No | `"amable, profesional y eficiente"` | Personalidad del agente |
 | `duracion_cita_minutos` | integer | ❌ No | `60` | Duración de la cita en minutos |
 | `slots` | integer | ❌ No | `60` | Cantidad de slots disponibles |
-| `agendar_usuario` | boolean/integer | ❌ No | `1` | Usuario que agenda (true=1, false=0) |
-| `agendar_sucursal` | boolean/integer | ❌ No | `0` | Agendar por sucursal (true=1, false=0) |
+| `agendar_usuario` | boolean/integer | ❌ No | `1` | Usuario que agenda (1=sí, 0=no) |
+| `agendar_sucursal` | boolean/integer | ❌ No | `0` | Agendar por sucursal (1=sí, 0=no) |
 
 ---
 
 ## Response
 
-### Formato MCP
-
 ```json
 {
-  "result": "¡Perfecto! Para confirmar tu reserva necesito algunos datos. ¿Cuál es tu nombre completo?"
+  "reply": "¡Perfecto! Para confirmar tu reserva necesito algunos datos. ¿Cuál es tu nombre completo?",
+  "session_id": 12345,
+  "metadata": null
 }
 ```
 
-### Estructura
-
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
-| `result` | string | Respuesta del agente en lenguaje natural |
-
-El agente mantiene el contexto de la conversación usando `session_id`, por lo que las respuestas son contextuales.
+| `reply` | string | Respuesta del agente en lenguaje natural |
+| `session_id` | integer | Mismo `session_id` enviado en el request |
+| `metadata` | object\|null | Datos adicionales (reservado para uso futuro) |
 
 ---
 
@@ -97,14 +97,11 @@ El agente mantiene el contexto de la conversación usando `session_id`, por lo q
 **Request:**
 ```json
 {
-  "tool": "chat",
-  "arguments": {
-    "message": "Hola, quiero reservar",
-    "session_id": 1001,
-    "context": {
-      "config": {
-        "id_empresa": 123
-      }
+  "message": "Hola, quiero reservar",
+  "session_id": 1001,
+  "context": {
+    "config": {
+      "id_empresa": 123
     }
   }
 }
@@ -113,26 +110,25 @@ El agente mantiene el contexto de la conversación usando `session_id`, por lo q
 **Response:**
 ```json
 {
-  "result": "¡Hola! Estaré encantado de ayudarte con tu reserva. ¿Qué servicio deseas reservar?"
+  "reply": "¡Hola! Estaré encantado de ayudarte con tu reserva. ¿Qué servicio deseas reservar?",
+  "session_id": 1001,
+  "metadata": null
 }
 ```
 
 ---
 
-### Ejemplo 2: Usuario da información completa
+### Ejemplo 2: Confirmación de reserva
 
 **Request:**
 ```json
 {
-  "tool": "chat",
-  "arguments": {
-    "message": "Necesito corte de cabello para mañana a las 3pm, soy Juan Pérez, mi teléfono es 987654321",
-    "session_id": 1002,
-    "context": {
-      "config": {
-        "id_empresa": 123,
-        "personalidad": "amigable y rápido"
-      }
+  "message": "Necesito corte de cabello para mañana a las 3pm, soy Juan Pérez, mi teléfono es 987654321",
+  "session_id": 1002,
+  "context": {
+    "config": {
+      "id_empresa": 123,
+      "personalidad": "amigable y rápido"
     }
   }
 }
@@ -141,194 +137,85 @@ El agente mantiene el contexto de la conversación usando `session_id`, por lo q
 **Response:**
 ```json
 {
-  "result": "Reserva confirmada exitosamente\n\n**Detalles:**\n• Servicio: Corte de cabello\n• Fecha: 2026-01-29\n• Hora: 03:00 PM\n• Nombre: Juan Pérez\n\n¡Te esperamos!"
+  "reply": "Reserva confirmada exitosamente\n\nDetalles:\n• Servicio: Corte de cabello\n• Fecha: 2026-01-29\n• Hora: 03:00 PM\n• Nombre: Juan Pérez\n\n¡Te esperamos!",
+  "session_id": 1002,
+  "metadata": null
 }
 ```
 
 ---
 
-### Ejemplo 3: Consulta de disponibilidad
-
-**Request:**
-```json
-{
-  "tool": "chat",
-  "arguments": {
-    "message": "¿Tienen horarios disponibles el viernes?",
-    "session_id": 1003,
-    "context": {
-      "config": {
-        "id_empresa": 123
-      }
-    }
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "result": "Horarios disponibles:\n• Viernes: 09:00 AM - 06:00 PM\n\n¿A qué hora te gustaría reservar?"
-}
-```
-
----
-
-### Ejemplo 4: Flujo conversacional (múltiples mensajes)
+### Ejemplo 3: Flujo conversacional (múltiples mensajes)
 
 **Request 1:**
 ```json
-{
-  "message": "Quiero reservar",
-  "session_id": 1004,
-  "context": {"config": {"id_empresa": 123}}
-}
+{"message": "Quiero reservar", "session_id": 1004, "context": {"config": {"id_empresa": 123}}}
 ```
-
 **Response 1:**
 ```json
-{"result": "¿Qué servicio deseas reservar?"}
+{"reply": "¿Qué servicio deseas reservar?", "session_id": 1004, "metadata": null}
 ```
 
 **Request 2 (misma sesión):**
 ```json
-{
-  "message": "Manicure",
-  "session_id": 1004,
-  "context": {"config": {"id_empresa": 123}}
-}
+{"message": "Manicure", "session_id": 1004, "context": {"config": {"id_empresa": 123}}}
 ```
-
 **Response 2:**
 ```json
-{"result": "Perfecto, manicure. ¿Para qué fecha necesitas la reserva?"}
-```
-
-**Request 3 (misma sesión):**
-```json
-{
-  "message": "Para el sábado a las 10am",
-  "session_id": 1004,
-  "context": {"config": {"id_empresa": 123}}
-}
-```
-
-**Response 3:**
-```json
-{"result": "Genial. Para confirmar, necesito tu nombre y teléfono o email."}
+{"reply": "Perfecto, manicure. ¿Para qué fecha necesitas la reserva?", "session_id": 1004, "metadata": null}
 ```
 
 ---
 
 ## Errores
 
-### Error: Context inválido
+Los errores se devuelven como respuestas normales con HTTP 200, dentro del campo `reply`:
 
-**Causa:** No se envió `id_empresa` o `session_id`
-
-**Response:**
+### Context inválido (falta `id_empresa`)
 ```json
-{
-  "result": "Error de configuración: Context missing required keys in config: ['id_empresa']"
-}
+{"reply": "Error de configuración: Context missing required keys in config: ['id_empresa']", "session_id": 1, "metadata": null}
 ```
 
-**Solución:** Asegurarse de enviar `context.config.id_empresa`
-
----
-
-### Error: Mensaje vacío
-
-**Causa:** `message` está vacío o solo contiene espacios
-
-**Response:**
+### Mensaje vacío
 ```json
-{
-  "result": "No recibí tu mensaje. ¿Podrías repetirlo?"
-}
+{"reply": "No recibí tu mensaje. ¿Podrías repetirlo?", "session_id": 1, "metadata": null}
 ```
 
-**Solución:** Enviar un mensaje con contenido
-
----
-
-### Error: Datos de reserva inválidos
-
-**Causa:** El usuario proporcionó datos que no cumplen validaciones (email inválido, teléfono mal formateado, fecha pasada, etc.)
-
-**Response:**
+### Horario no disponible
 ```json
-{
-  "result": "Datos inválidos: Contacto debe ser un email válido o un teléfono peruano válido (9XXXXXXXX). Recibido: 123\n\nPor favor verifica la información."
-}
+{"reply": "La hora seleccionada está fuera del horario de atención. El horario del lunes es de 09:00 AM a 06:00 PM. Por favor elige otra hora.", "session_id": 1, "metadata": null}
 ```
-
-**Solución:** El agente pedirá nuevamente los datos correctos
 
 ---
 
-### Error: Horario no disponible
+## Endpoints Auxiliares
 
-**Causa:** El horario seleccionado ya está ocupado o está fuera del rango de atención
+### GET /health
 
-**Response:**
-```json
-{
-  "result": "La hora seleccionada es después del horario de atención. El horario del lunes es de 09:00 AM a 06:00 PM.\n\nPor favor elige otra fecha u hora."
-}
-```
-
-**Solución:** El agente sugerirá horarios alternativos
-
----
-
-## Métricas
-
-### Endpoint de métricas
+Healthcheck para el gateway y balanceadores.
 
 ```
-GET http://localhost:8003/metrics
+GET /health
+→ 200 OK
+{"status": "ok"}
 ```
 
-**Formato:** Prometheus
+### GET /metrics
 
-**Métricas principales:**
+Métricas en formato Prometheus.
 
-```prometheus
-# Total de mensajes recibidos
-agent_reservas_chat_requests_total{session_id="sess-001"} 5
-
-# Reservas exitosas
-agent_reservas_booking_success_total 42
-
-# Reservas fallidas
-agent_reservas_booking_failed_total{reason="validation_error"} 3
-
-# Latencia de respuesta (percentiles)
-agent_reservas_chat_response_duration_seconds_bucket{le="1.0"} 150
-agent_reservas_chat_response_duration_seconds_bucket{le="5.0"} 280
+```
+GET /metrics
+→ 200 OK (texto Prometheus)
 ```
 
-Ver todas las métricas disponibles en el endpoint `/metrics`.
-
----
-
-## Notas Importantes
-
-1. **Session ID único**: Cada usuario debe tener un `session_id` único para mantener contexto de conversación.
-
-2. **Memoria automática**: El agente recuerda la conversación usando `session_id`. No es necesario enviar historial manualmente.
-
-3. **Validación multicapa**: El agente valida automáticamente:
-   - Formato de datos (Pydantic)
-   - Horarios disponibles (contra API)
-   - Disponibilidad real (slots ocupados)
-
-4. **Confirmación de reserva**: La API externa confirma la reserva y devuelve un mensaje de éxito. El agente muestra los detalles de la reserva confirmada.
-
-5. **Personalidad configurable**: Se puede ajustar por empresa enviando `context.config.personalidad`.
-
-6. **Timeout**: Las llamadas al agente tienen timeout de 90s (OpenAI) + 10s (APIs externas).
+Métricas principales disponibles:
+```
+agent_reservas_chat_requests_total
+agent_reservas_booking_success_total
+agent_reservas_booking_failed_total
+agent_reservas_chat_response_duration_seconds
+```
 
 ---
 
@@ -339,60 +226,63 @@ Ver todas las métricas disponibles en el endpoint `/metrics`.
 ```python
 import httpx
 
-async def reservar(mensaje: str, session_id: int, id_empresa: int):
+async def chat(mensaje: str, session_id: int, id_empresa: int) -> str:
     async with httpx.AsyncClient() as client:
         response = await client.post(
-            "http://localhost:8003/tools/call",
+            "http://localhost:8003/chat",
             json={
-                "tool": "chat",
-                "arguments": {
-                    "message": mensaje,
-                    "session_id": session_id,
-                    "context": {
-                        "config": {
-                            "id_empresa": id_empresa,
-                            "agendar_usuario": 1,
-                            "agendar_sucursal": 0
-                        }
+                "message": mensaje,
+                "session_id": session_id,
+                "context": {
+                    "config": {
+                        "id_empresa": id_empresa,
+                        "agendar_usuario": 1,
+                        "agendar_sucursal": 0
                     }
                 }
             }
         )
         data = response.json()
-        return data["result"]
+        return data["reply"]
 ```
 
 ### JavaScript
 
 ```javascript
-async function reservar(mensaje, sessionId, idEmpresa) {
-  const response = await fetch('http://localhost:8003/tools/call', {
+async function chat(mensaje, sessionId, idEmpresa) {
+  const response = await fetch('http://localhost:8003/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      tool: 'chat',
-      arguments: {
-        message: mensaje,
-        session_id: sessionId,  // integer, no string
-        context: {
-          config: {
-            id_empresa: idEmpresa,
-            agendar_usuario: 1,
-            agendar_sucursal: 0
-          }
+      message: mensaje,
+      session_id: sessionId,
+      context: {
+        config: {
+          id_empresa: idEmpresa,
+          agendar_usuario: 1,
+          agendar_sucursal: 0
         }
       }
     })
   });
 
   const data = await response.json();
-  return data.result;
+  return data.reply;
 }
 ```
 
 ---
 
-## Próximos Pasos
+## Notas Importantes
 
-- Ver [ARCHITECTURE.md](ARCHITECTURE.md) para entender cómo funciona internamente
-- Ver [DEPLOYMENT.md](DEPLOYMENT.md) para desplegar el agente
+1. **Session ID único**: Cada usuario debe tener un `session_id` único (integer) para mantener el contexto conversacional.
+2. **Memoria automática**: El agente recuerda la conversación usando `session_id`. No es necesario enviar historial manualmente.
+3. **Validación multicapa**: El agente valida automáticamente formato de datos, horarios disponibles y disponibilidad real.
+4. **Timeouts**: LLM 90s + APIs externas 10s.
+
+---
+
+## Ver también
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Arquitectura interna del sistema
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Guía de despliegue

@@ -1,13 +1,17 @@
 """
-Servidor MCP del agente especializado en reservas.
-Usa FastMCP para exponer herramientas según el protocolo MCP.
+Servidor HTTP del agente especializado en reservas.
+Usa FastAPI para exponer endpoints REST.
 
-Versión mejorada con logging, métricas y observabilidad.
+Versión 3.0.0 - Migrado de FastMCP a FastAPI puro.
 """
 
 import logging
+import uvicorn
+from contextlib import asynccontextmanager
 from typing import Any, Dict
-from fastmcp import FastMCP
+
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
 try:
@@ -15,11 +19,13 @@ try:
     from .agent import process_reserva_message
     from .logger import setup_logging, get_logger
     from .metrics import initialize_agent_info
+    from .config.models import ChatRequest, ChatResponse
 except ImportError:
     from reservas.config import config as app_config
     from reservas.agent import process_reserva_message
     from reservas.logger import setup_logging, get_logger
     from reservas.metrics import initialize_agent_info
+    from reservas.config.models import ChatRequest, ChatResponse
 
 # Configurar logging antes de cualquier otra cosa
 log_level = getattr(logging, app_config.LOG_LEVEL.upper(), logging.INFO)
@@ -31,91 +37,11 @@ setup_logging(
 logger = get_logger(__name__)
 
 # Inicializar información del agente para métricas
-initialize_agent_info(model=app_config.OPENAI_MODEL, version="2.0.0")
-
-# Inicializar servidor MCP
-mcp = FastMCP(
-    name="Agente Reservas - MaravIA",
-    instructions="Agente especializado en gestión de reservas y turnos"
-)
+initialize_agent_info(model=app_config.OPENAI_MODEL, version="3.0.0")
 
 
-@mcp.tool()
-async def chat(
-    message: str,
-    session_id: int,
-    context: Dict[str, Any] | None = None
-) -> str:
-    """
-    Agente especializado en gestión de reservas.
-    
-    Esta es la ÚNICA herramienta que el orquestador debe llamar.
-    Internamente, el agente usa tools propias para:
-    - Consultar disponibilidad de horarios (check_availability)
-    - Crear reservas con validación real (create_booking)
-    
-    El agente maneja la conversación completa de forma autónoma,
-    decidiendo cuándo usar cada tool según el contexto.
-    La memoria es automática gracias al checkpointer (InMemorySaver).
-    
-    Args:
-        message: Mensaje del cliente que quiere reservar
-        session_id: ID de sesión (int, unificado con orquestador)
-        context: Contexto adicional requerido:
-            - config.id_empresa (int, requerido): ID de la empresa
-            - config.agendar_usuario (bool o int, opcional): 1=agendar por usuario, 0=no (default: 1)
-            - config.agendar_sucursal (bool o int, opcional): 1=agendar por sucursal, 0=no (default: 0)
-            - config.duracion_cita_minutos (int, opcional): Duración en minutos (default: 60)
-            - config.slots (int, opcional): Slots disponibles (default: 60)
-            - config.personalidad (str, opcional): Personalidad del agente
-    
-    Returns:
-        Respuesta del agente especializado en reservas
-    
-    Examples:
-        >>> context = {
-        ...     "config": {
-        ...         "id_empresa": 123,
-        ...         "personalidad": "amable y profesional"
-        ...     }
-        ... }
-        >>> await chat("Quiero reservar un turno", 3671, context)
-        "¡Perfecto! ¿Para qué servicio deseas reservar?"
-    """
-    if context is None:
-        context = {}
-    
-    logger.info(f"[MCP] Mensaje recibido - Session: {session_id}, Length: {len(message)} chars")
-    logger.debug(f"[MCP] Message: {message[:100]}...")
-    logger.debug(f"[MCP] Context keys: {list(context.keys())}")
-    
-    try:
-        reply = await process_reserva_message(
-            message=message,
-            session_id=session_id,
-            context=context
-        )
-        
-        logger.info(f"[MCP] Respuesta generada - Length: {len(reply)} chars")
-        logger.debug(f"[MCP] Reply: {reply[:200]}...")
-        return reply
-    
-    except ValueError as e:
-        error_msg = f"Error de configuración: {str(e)}"
-        logger.error(f"[MCP] {error_msg}")
-        return error_msg
-    
-    except Exception as e:
-        error_msg = f"Error procesando mensaje: {str(e)}"
-        logger.error(f"[MCP] {error_msg}", exc_info=True)
-        return error_msg
-
-
-# Endpoint de métricas para Prometheus (opcional)
-metrics_app = make_asgi_app()
-
-
-if __name__ == "__main__":
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     logger.info("=" * 60)
     logger.info("INICIANDO AGENTE RESERVAS - MaravIA")
     logger.info("=" * 60)
@@ -126,20 +52,75 @@ if __name__ == "__main__":
     logger.info(f"Cache TTL: {app_config.SCHEDULE_CACHE_TTL_MINUTES} min")
     logger.info(f"Log Level: {app_config.LOG_LEVEL}")
     logger.info("-" * 60)
-    logger.info("Tool expuesta al orquestador: chat")
-    logger.info("Tools internas del agente:")
-    logger.info("- check_availability (consulta horarios)")
-    logger.info("- create_booking (crea reservas)")
-    logger.info("-" * 60)
-    logger.info("Métricas disponibles en /metrics (Prometheus)")
+    logger.info("Endpoints disponibles:")
+    logger.info("  POST /chat     (agente de reservas)")
+    logger.info("  GET  /health   (healthcheck)")
+    logger.info("  GET  /metrics  (Prometheus)")
     logger.info("=" * 60)
-    
-    # Ejecutar servidor MCP
+    yield
+    logger.info("Servidor detenido.")
+
+
+app = FastAPI(
+    title="Agente Reservas - MaravIA",
+    description="Agente conversacional especializado en gestión de reservas y turnos.",
+    version="3.0.0",
+    lifespan=lifespan,
+)
+
+# Montar métricas Prometheus en /metrics
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest) -> ChatResponse:
+    """
+    Endpoint principal del agente de reservas.
+
+    Recibe el mensaje del cliente junto con la sesión y el contexto de configuración.
+    El agente maneja la conversación completa de forma autónoma, usando tools internas
+    para consultar disponibilidad y crear reservas.
+
+    El campo `context.config.id_empresa` es obligatorio.
+    """
+    logger.info(f"[HTTP] POST /chat - Session: {request.session_id}, Length: {len(request.message)} chars")
+    logger.debug(f"[HTTP] Message: {request.message[:100]}...")
+    logger.debug(f"[HTTP] Context keys: {list(request.context.keys())}")
+
     try:
-        mcp.run(
-            transport="http",  # HTTP para conectar servicios separados
+        reply = await process_reserva_message(
+            message=request.message,
+            session_id=request.session_id,
+            context=request.context,
+        )
+        logger.info(f"[HTTP] Respuesta generada - Length: {len(reply)} chars")
+        logger.debug(f"[HTTP] Reply: {reply[:200]}...")
+        return ChatResponse(reply=reply, session_id=request.session_id)
+
+    except ValueError as e:
+        error_msg = f"Error de configuración: {str(e)}"
+        logger.error(f"[HTTP] {error_msg}")
+        return ChatResponse(reply=error_msg, session_id=request.session_id)
+
+    except Exception as e:
+        error_msg = f"Error procesando mensaje: {str(e)}"
+        logger.error(f"[HTTP] {error_msg}", exc_info=True)
+        return ChatResponse(reply=error_msg, session_id=request.session_id)
+
+
+@app.get("/health")
+async def health() -> JSONResponse:
+    """Healthcheck para el gateway y orquestadores."""
+    return JSONResponse(content={"status": "ok"})
+
+
+if __name__ == "__main__":
+    try:
+        uvicorn.run(
+            app,
             host=app_config.SERVER_HOST,
-            port=app_config.SERVER_PORT
+            port=app_config.SERVER_PORT,
         )
     except KeyboardInterrupt:
         logger.info("\nServidor detenido por el usuario")

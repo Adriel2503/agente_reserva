@@ -12,12 +12,14 @@ from langchain.tools import tool, ToolRuntime
 try:
     from ..services.schedule_validator import ScheduleValidator
     from ..services.booking import confirm_booking
+    from ..services.busqueda_productos import buscar_productos_servicios, format_productos_para_respuesta
     from ..logger import get_logger
     from ..metrics import track_tool_execution
     from ..validation import validate_booking_data
 except ImportError:
     from reservas.services.schedule_validator import ScheduleValidator
     from reservas.services.booking import confirm_booking
+    from reservas.services.busqueda_productos import buscar_productos_servicios, format_productos_para_respuesta
     from reservas.logger import get_logger
     from reservas.metrics import track_tool_execution
     from reservas.validation import validate_booking_data
@@ -209,10 +211,59 @@ Detalles:
         return f"Error inesperado al crear la reserva: {str(e)}\n\nPor favor intenta nuevamente."
 
 
+@tool
+async def search_productos_servicios(
+    busqueda: str,
+    limite: int = 10,
+    runtime: ToolRuntime = None
+) -> str:
+    """
+    Busca productos y servicios del catálogo por nombre o descripción.
+    Úsala cuando el cliente pregunte qué productos tienen, precios,
+    qué servicios ofrecen, o busque algo específico.
+
+    Args:
+        busqueda: Término de búsqueda (ej: "corte", "masaje", "Novax")
+        limite: Cantidad máxima de resultados a devolver (default 10)
+        runtime: Contexto automático (inyectado por LangChain)
+
+    Returns:
+        Texto con los productos/servicios encontrados o mensaje si no hay resultados
+    """
+    logger.debug(f"[TOOL] search_productos_servicios - busqueda: {busqueda}, limite: {limite}")
+
+    ctx = runtime.context if runtime else None
+    id_empresa = ctx.id_empresa if ctx else 1
+
+    try:
+        with track_tool_execution("search_productos_servicios"):
+            result = await buscar_productos_servicios(
+                id_empresa=id_empresa,
+                busqueda=busqueda,
+                limite=limite,
+            )
+
+            if not result["success"]:
+                return result.get("error", "No se pudo completar la búsqueda.")
+
+            productos = result.get("productos", [])
+            if not productos:
+                return f"No encontré productos o servicios que coincidan con '{busqueda}'. Prueba con otros términos."
+
+            lineas = [f"Encontré {len(productos)} resultado(s) para '{busqueda}':\n"]
+            lineas.append(format_productos_para_respuesta(productos))
+            return "\n".join(lineas)
+
+    except Exception as e:
+        logger.error(f"[TOOL] search_productos_servicios - Error: {e}", exc_info=True)
+        return f"Error al buscar: {str(e)}. Intenta de nuevo."
+
+
 # Lista de todas las tools disponibles para el agente
 AGENT_TOOLS = [
     check_availability,
-    create_booking
+    create_booking,
+    search_productos_servicios,
 ]
 
-__all__ = ["check_availability", "create_booking", "AGENT_TOOLS"]
+__all__ = ["check_availability", "create_booking", "search_productos_servicios", "AGENT_TOOLS"]
